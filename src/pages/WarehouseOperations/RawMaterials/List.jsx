@@ -1,0 +1,233 @@
+import React, { useState } from 'react';
+import { Package, Search, Filter, Plus, Eye, Edit, TruckIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { materialService } from '../../../services/materialService';
+
+const RawMaterialsList = () => {
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [rawMaterials, setRawMaterials] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  React.useEffect(() => {
+    loadRawMaterials();
+  }, []);
+
+  const loadRawMaterials = async () => {
+    try {
+      setLoading(true);
+      const materials = await materialService.getRawMaterials();
+      setRawMaterials(materials.filter(material => material.status === 'active'));
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStockStatus = (current, reorder) => {
+    if (current <= reorder) return { status: 'Low', color: 'bg-red-100 text-red-800' };
+    if (current <= reorder * 2) return { status: 'Medium', color: 'bg-yellow-100 text-yellow-800' };
+    return { status: 'Good', color: 'bg-green-100 text-green-800' };
+  };
+
+  const getQualityColor = (grade) => {
+    switch (grade) {
+      case 'A': return 'bg-green-100 text-green-800';
+      case 'B': return 'bg-blue-100 text-blue-800';
+      case 'C': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const filteredMaterials = rawMaterials.filter(material => {
+    const matchesSearch = material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         material.code.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!filterStatus) return matchesSearch;
+    
+    const stockStatus = getStockStatus(material.currentStock, material.reorderLevel);
+    return matchesSearch && stockStatus.status.toLowerCase() === filterStatus.toLowerCase();
+  });
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <div className="space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-16 bg-gray-200 rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      {error && (
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+      
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
+              <Package className="h-8 w-8 mr-3 text-blue-600" />
+              Raw Materials
+            </h1>
+            <p className="text-gray-600 mt-2">Manage raw material inventory and stock levels</p>
+          </div>
+          <button
+            onClick={() => navigate('/warehouse/raw-materials/request')}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Request Material</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder="Search materials..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Status</option>
+                <option value="good">Good Stock</option>
+                <option value="medium">Medium Stock</option>
+                <option value="low">Low Stock</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Material
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Category
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Stock Level
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Quality Grade
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Supplier
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Price/Unit
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Last Received
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredMaterials.map((material) => {
+                const stockStatus = getStockStatus(material.currentStock, material.reorderLevel);
+                return (
+                  <tr key={material.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{material.name}</div>
+                        <div className="text-sm text-gray-500">{material.code}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                        {material.category}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-gray-900">{material.currentStock} {material.unit}</span>
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${stockStatus.color}`}>
+                          {stockStatus.status}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getQualityColor(material.qualityGrade)}`}>
+                        Grade {material.qualityGrade}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {material.supplier}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      ${material.pricePerUnit}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {material.lastReceived}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => navigate(`/warehouse/raw-materials/${material.id}`)}
+                          className="text-blue-600 hover:text-blue-900 p-1 rounded"
+                          title="View Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => navigate(`/warehouse/raw-materials/${material.id}/qc`)}
+                          className="text-green-600 hover:text-green-900 p-1 rounded"
+                          title="QC Form"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredMaterials.length === 0 && (
+          <div className="text-center py-12">
+            <Package className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">No materials found</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {searchTerm || filterStatus ? 'Try adjusting your search criteria.' : 'Get started by requesting materials.'}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default RawMaterialsList;
