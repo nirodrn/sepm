@@ -1,27 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, Save, ArrowLeft, AlertTriangle, DollarSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Archive, Send, ArrowLeft, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { packingMaterialsService } from '../../services/packingMaterialsService';
 import { materialService } from '../../services/materialService';
 
-const RequestPurchase = () => {
+const RequestMaterials = () => {
   const navigate = useNavigate();
   const [requestItems, setRequestItems] = useState([
-    { id: 1, materialId: '', materialName: '', quantity: '', unit: '', urgency: 'normal', notes: '', estimatedPrice: '' }
+    { id: 1, materialId: '', materialName: '', quantity: '', unit: '', urgency: 'normal', reason: '', productionLine: 'line1' }
   ]);
   const [availableMaterials, setAvailableMaterials] = useState([]);
   const [currentStock, setCurrentStock] = useState([]);
-  const [justification, setJustification] = useState('');
-  const [expectedDelivery, setExpectedDelivery] = useState('');
-  const [budgetEstimate, setBudgetEstimate] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [additionalNotes, setAdditionalNotes] = useState('');
 
   useEffect(() => {
-    loadMaterials();
+    loadData();
   }, []);
 
-  const loadMaterials = async () => {
+  const loadData = async () => {
     try {
       const [materials, stockReport] = await Promise.all([
         materialService.getPackingMaterials(),
@@ -31,25 +29,20 @@ const RequestPurchase = () => {
       setAvailableMaterials(materials.filter(m => m.status === 'active'));
       setCurrentStock(stockReport);
     } catch (error) {
-      setError('Failed to load materials');
+      setError('Failed to load materials data');
     }
   };
 
-  const getCurrentStock = (materialId) => {
+  const getStockLevel = (materialId) => {
     const stockItem = currentStock.find(s => s.materialId === materialId);
     return stockItem?.currentStock || 0;
-  };
-
-  const getReorderLevel = (materialId) => {
-    const material = availableMaterials.find(m => m.id === materialId);
-    return material?.reorderLevel || 0;
   };
 
   const addItem = () => {
     const newId = Math.max(...requestItems.map(item => item.id)) + 1;
     setRequestItems([
       ...requestItems,
-      { id: newId, materialId: '', materialName: '', quantity: '', unit: '', urgency: 'normal', notes: '', estimatedPrice: '' }
+      { id: newId, materialId: '', materialName: '', quantity: '', unit: '', urgency: 'normal', reason: '', productionLine: 'line1' }
     ]);
   };
 
@@ -70,7 +63,6 @@ const RequestPurchase = () => {
           if (material) {
             updatedItem.materialName = material.name;
             updatedItem.unit = material.unit;
-            updatedItem.estimatedPrice = material.pricePerUnit || '';
           }
         }
         
@@ -80,22 +72,12 @@ const RequestPurchase = () => {
     }));
   };
 
-  const calculateTotalBudget = () => {
-    return requestItems.reduce((total, item) => {
-      const quantity = parseInt(item.quantity) || 0;
-      const price = parseFloat(item.estimatedPrice) || 0;
-      return total + (quantity * price);
-    }, 0);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     try {
-      const totalBudget = calculateTotalBudget();
-      
       const requestData = {
         items: requestItems.filter(item => item.materialId && item.quantity).map(item => ({
           materialId: item.materialId,
@@ -103,19 +85,16 @@ const RequestPurchase = () => {
           quantity: parseInt(item.quantity),
           unit: item.unit,
           urgency: item.urgency,
-          notes: item.notes,
-          estimatedPrice: parseFloat(item.estimatedPrice) || 0,
-          currentStock: getCurrentStock(item.materialId),
-          reorderLevel: getReorderLevel(item.materialId)
+          reason: item.reason,
+          productionLine: item.productionLine
         })),
-        justification,
-        expectedDelivery: expectedDelivery || null,
-        budgetEstimate: budgetEstimate ? parseFloat(budgetEstimate) : totalBudget,
-        calculatedBudget: totalBudget
+        requestedFor: 'packing_area',
+        notes: additionalNotes,
+        requestType: 'internal_packing_materials'
       };
       
-      await packingMaterialsService.createPurchaseRequest(requestData);
-      navigate('/packing-materials/stock');
+      await packingMaterialsService.createInternalRequest(requestData);
+      navigate('/dashboard');
     } catch (error) {
       setError(error.message);
     } finally {
@@ -144,48 +123,25 @@ const RequestPurchase = () => {
     return 'text-green-600';
   };
 
-  const totalBudget = calculateTotalBudget();
-  const requiresMDApproval = totalBudget > 10000;
-
   return (
     <div className="p-6">
       <div className="mb-8">
         <div className="flex items-center space-x-4">
           <button
-            onClick={() => navigate('/packing-materials/stock')}
+            onClick={() => navigate('/dashboard')}
             className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <ShoppingCart className="h-8 w-8 mr-3 text-blue-600" />
-              Request Purchase
+              <Archive className="h-8 w-8 mr-3 text-blue-600" />
+              Request Packing Materials
             </h1>
-            <p className="text-gray-600 mt-2">Submit a purchase request for packing materials to Head of Operations</p>
+            <p className="text-gray-600 mt-2">Submit request to Packing Materials Store Manager</p>
           </div>
         </div>
       </div>
-
-      {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
-
-      {requiresMDApproval && (
-        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2" />
-            <div>
-              <p className="text-yellow-800 font-medium">High Value Request</p>
-              <p className="text-yellow-700 text-sm">
-                This request exceeds $10,000 and will require Main Director approval after HO approval.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       <form onSubmit={handleSubmit} className="max-w-6xl">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
@@ -203,10 +159,9 @@ const RequestPurchase = () => {
 
           <div className="space-y-6">
             {requestItems.map((item, index) => {
-              const currentStock = getCurrentStock(item.materialId);
-              const reorderLevel = getReorderLevel(item.materialId);
-              const isLowStock = currentStock <= reorderLevel;
-              const itemTotal = (parseInt(item.quantity) || 0) * (parseFloat(item.estimatedPrice) || 0);
+              const stockLevel = getStockLevel(item.materialId);
+              const material = availableMaterials.find(m => m.id === item.materialId);
+              const isLowStock = material && stockLevel <= material.reorderLevel;
               
               return (
                 <div key={item.id} className={`border rounded-lg p-4 ${
@@ -245,16 +200,13 @@ const RequestPurchase = () => {
                       </select>
                       {item.materialId && (
                         <div className="mt-1 text-sm">
-                          <span className={`font-medium ${getStockStatusColor(currentStock, reorderLevel)}`}>
-                            Current: {currentStock} {item.unit}
-                          </span>
-                          <span className="text-gray-500 ml-2">
-                            Reorder: {reorderLevel} {item.unit}
+                          <span className={`font-medium ${getStockStatusColor(stockLevel, material?.reorderLevel)}`}>
+                            Store Stock: {stockLevel} {material?.unit}
                           </span>
                           {isLowStock && (
                             <div className="flex items-center text-red-600 mt-1">
                               <AlertTriangle className="h-3 w-3 mr-1" />
-                              <span className="text-xs">Below reorder level</span>
+                              <span className="text-xs">Low stock in store</span>
                             </div>
                           )}
                         </div>
@@ -278,6 +230,23 @@ const RequestPurchase = () => {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Production Line
+                      </label>
+                      <select
+                        value={item.productionLine}
+                        onChange={(e) => updateItem(item.id, 'productionLine', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="line1">Packing Line 1</option>
+                        <option value="line2">Packing Line 2</option>
+                        <option value="line3">Packing Line 3</option>
+                        <option value="line4">Packing Line 4</option>
+                        <option value="general">General Packing Area</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
                         Unit
                       </label>
                       <input
@@ -285,21 +254,6 @@ const RequestPurchase = () => {
                         value={item.unit}
                         readOnly
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Est. Price/{item.unit || 'unit'}
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={item.estimatedPrice}
-                        onChange={(e) => updateItem(item.id, 'estimatedPrice', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0.00"
                       />
                     </div>
 
@@ -322,110 +276,65 @@ const RequestPurchase = () => {
 
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Item Notes
+                      Reason for Request *
                     </label>
                     <textarea
                       rows={2}
-                      value={item.notes}
-                      onChange={(e) => updateItem(item.id, 'notes', e.target.value)}
+                      value={item.reason}
+                      onChange={(e) => updateItem(item.id, 'reason', e.target.value)}
+                      required
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Add any special requirements or notes for this item..."
+                      placeholder="Explain why this material is needed for packing operations..."
                     />
                   </div>
 
-                  <div className="mt-3 flex justify-between items-center">
+                  <div className="mt-3 flex justify-end">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getUrgencyColor(item.urgency)}`}>
                       {item.urgency.charAt(0).toUpperCase() + item.urgency.slice(1)} Priority
                     </span>
-                    {itemTotal > 0 && (
-                      <div className="flex items-center text-sm text-gray-900">
-                        <DollarSign className="h-4 w-4 mr-1" />
-                        <span className="font-medium">Item Total: ${itemTotal.toFixed(2)}</span>
-                      </div>
-                    )}
                   </div>
                 </div>
               );
             })}
           </div>
-
-          {totalBudget > 0 && (
-            <div className="mt-6 bg-gray-50 rounded-lg p-4">
-              <div className="flex justify-between items-center">
-                <span className="text-lg font-semibold text-gray-900">Calculated Total Budget:</span>
-                <span className="text-2xl font-bold text-blue-600">${totalBudget.toFixed(2)}</span>
-              </div>
-              {requiresMDApproval && (
-                <p className="text-sm text-yellow-700 mt-2">
-                  ⚠️ This amount requires Main Director approval
-                </p>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Details</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Summary</h3>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Expected Delivery Date
-              </label>
-              <input
-                type="date"
-                value={expectedDelivery}
-                onChange={(e) => setExpectedDelivery(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Manual Budget Override
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                value={budgetEstimate}
-                onChange={(e) => setBudgetEstimate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder={`Auto-calculated: $${totalBudget.toFixed(2)}`}
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                Leave empty to use calculated total (${totalBudget.toFixed(2)})
-              </p>
-            </div>
-          </div>
-
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Business Justification *
+              Additional Notes
             </label>
             <textarea
-              rows={4}
-              value={justification}
-              onChange={(e) => setJustification(e.target.value)}
-              required
+              rows={3}
+              value={additionalNotes}
+              onChange={(e) => setAdditionalNotes(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Provide detailed justification for this purchase request. Include business impact, urgency reasons, and expected benefits..."
+              placeholder="Add any additional information for the Store Manager..."
             />
           </div>
+
+          {error && (
+            <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
 
           <div className="flex items-center justify-end space-x-4">
             <button
               type="button"
-              onClick={() => navigate('/packing-materials/stock')}
+              onClick={() => navigate('/dashboard')}
               className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={loading || requestItems.every(item => !item.materialId || !item.quantity) || !justification}
+              disabled={loading || requestItems.every(item => !item.materialId || !item.quantity)}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <Save className="h-4 w-4" />
+              <Send className="h-4 w-4" />
               <span>{loading ? 'Submitting...' : 'Submit Request'}</span>
             </button>
           </div>
@@ -435,4 +344,4 @@ const RequestPurchase = () => {
   );
 };
 
-export default RequestPurchase;
+export default RequestMaterials;

@@ -4,7 +4,7 @@ import { useRole } from '../../hooks/useRole';
 import {
   Home, Users, Package, TruckIcon, FileText, BarChart3,
   Settings, ShoppingCart, Clipboard, Archive, Factory, Package2, Send,
-  Eye, Database, Receipt, CheckCircle, Clock, TrendingUp, Crown
+  Eye, Database, Receipt, CheckCircle, Clock, TrendingUp, Crown, ClipboardCheck
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -131,9 +131,9 @@ const Sidebar = () => {
           roles: ['WarehouseStaff']
         },
         {
-          title: 'Suppliers',
-          icon: TruckIcon,
-          path: '/warehouse/suppliers',
+          title: 'Packing Material QC',
+          icon: ClipboardCheck,
+          path: '/warehouse/packing-materials/delivery-qc',
           roles: ['WarehouseStaff']
         }
       ];
@@ -169,6 +169,12 @@ const Sidebar = () => {
           roles: ['PackingMaterialsStoreManager']
         },
         {
+          title: 'Internal Requests',
+          icon: Package,
+          path: '/packing-materials/requests/internal',
+          roles: ['PackingMaterialsStoreManager']
+        },
+        {
           title: 'Send to Packing',
           icon: ShoppingCart,
           path: '/packing-materials/send',
@@ -176,8 +182,20 @@ const Sidebar = () => {
         },
         {
           title: 'Request Purchase',
-          icon: Clipboard,
+          icon: ShoppingCart,
           path: '/packing-materials/request',
+          roles: ['PackingMaterialsStoreManager']
+        },
+        {
+          title: 'Request History',
+          icon: Clock,
+          path: '/packing-materials/requests/history',
+          roles: ['PackingMaterialsStoreManager']
+        },
+        {
+          title: 'Dispatch History',
+          icon: Send,
+          path: '/packing-materials/dispatches',
           roles: ['PackingMaterialsStoreManager']
         }
       ];
@@ -257,7 +275,7 @@ const Sidebar = () => {
       return [
         ...baseItems,
         {
-          title: 'Request from Production',
+          title: 'Request Products',
           icon: Package,
           path: '/packing-area/request-products',
           roles: ['PackingAreaManager']

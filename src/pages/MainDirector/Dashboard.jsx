@@ -2,11 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Crown, CheckCircle, Clock, BarChart3, TrendingUp, Eye, CheckSquare, X } from 'lucide-react';
 import { requestService } from '../../services/requestService';
+import { packingMaterialsService } from '../../services/packingMaterialsService';
+import { auth } from '../../firebase/auth';
 
 const MainDirectorDashboard = () => {
   const navigate = useNavigate();
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [stats, setStats] = useState([]);
   const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [pendingPackingMaterialApprovals, setPendingPackingMaterialApprovals] = useState([]);
   const [recentDecisions, setRecentDecisions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -17,12 +23,15 @@ const MainDirectorDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [hoApprovedRequests, allRequests] = await Promise.all([
-        requestService.getMaterialRequests({ status: 'ho_approved' }),
-        requestService.getMaterialRequests()
+      const [pendingMDMaterialRequests, pendingMDProductRequests, allRequests, packingMaterialRequests] = await Promise.all([
+        requestService.getMaterialRequests({ status: 'forwarded_to_md' }),
+        requestService.getProductRequests({ status: 'forwarded_to_md' }),
+        requestService.getMaterialRequests(),
+        packingMaterialsService.getPurchaseRequests({ status: 'forwarded_to_md' })
       ]);
 
-      const pendingMDApproval = hoApprovedRequests.length;
+      const pendingMDApproval = pendingMDMaterialRequests.length + pendingMDProductRequests.length;
+      const pendingPackingMDApproval = packingMaterialRequests.length;
       const totalRequests = allRequests.length;
       const approvedToday = allRequests.filter(req => 
         req.status === 'md_approved' && 
@@ -32,7 +41,7 @@ const MainDirectorDashboard = () => {
       setStats([
         {
           name: 'Pending MD Approval',
-          value: pendingMDApproval.toString(),
+          value: (pendingMDApproval + pendingPackingMDApproval).toString(),
           change: 'Final approval required',
           changeType: 'neutral',
           icon: Clock,
@@ -64,7 +73,7 @@ const MainDirectorDashboard = () => {
         }
       ]);
 
-      setPendingApprovals(hoApprovedRequests);
+      setPendingApprovals([...pendingMDMaterialRequests, ...pendingMDProductRequests]);
 
       setRecentDecisions([
         { action: 'Approved material request', details: 'Chemical B - 200L', decision: 'approved', time: '1 hour ago' },
@@ -78,8 +87,7 @@ const MainDirectorDashboard = () => {
     }
   };
 
-  const handleMDApprove = async (requestId) => {
-    const notes = prompt('Add approval notes (optional):');
+  const handleMDApprove = async (requestId, notes) => {
     try {
       await requestService.mdApproveRequest(requestId, { notes: notes || 'Approved by MD' });
       await loadDashboardData();
@@ -89,14 +97,20 @@ const MainDirectorDashboard = () => {
   };
 
   const handleMDReject = async (requestId) => {
-    const reason = prompt('Please provide rejection reason:');
-    if (reason) {
-      try {
-        await requestService.rejectRequest(requestId, { reason });
-        await loadDashboardData();
-      } catch (error) {
-        setError(error.message);
-      }
+    try {
+      await requestService.rejectRequest(requestId, { reason: rejectionReason });
+      setShowRejectModal(false);
+      setSelectedRequestId(null);
+      setRejectionReason('');
+      await loadDashboardData();
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const confirmReject = () => {
+    if (selectedRequestId && rejectionReason.trim()) {
+      handleMDReject(selectedRequestId);
     }
   };
 
@@ -160,6 +174,47 @@ const MainDirectorDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Final Approvals Required</h3>
+          
+          {/* Rejection Modal */}
+          {showRejectModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Reject Request</h3>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for rejection *
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    placeholder="Please provide a detailed reason for rejection..."
+                  />
+                </div>
+                <div className="flex items-center justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowRejectModal(false);
+                      setSelectedRequestId(null);
+                      setRejectionReason('');
+                    }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmReject}
+                    disabled={!rejectionReason.trim()}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Reject Request
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
             {pendingApprovals.slice(0, 5).map((request, index) => (
               <div key={index} className="border border-gray-200 rounded-lg p-4">
@@ -178,17 +233,20 @@ const MainDirectorDashboard = () => {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => handleMDApprove(request.id)}
-                      className="text-green-600 hover:text-green-800 p-2 rounded-lg bg-green-50 hover:bg-green-100 transition-colors"
-                      title="MD Approve"
+                     className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm transition-colors flex items-center space-x-1"
                     >
-                      <CheckSquare className="h-4 w-4" />
+                     <CheckCircle className="h-3 w-3" />
+                     <span>MD Approve</span>
                     </button>
                     <button
-                      onClick={() => handleMDReject(request.id)}
-                      className="text-red-600 hover:text-red-800 p-2 rounded-lg bg-red-50 hover:bg-red-100 transition-colors"
-                      title="MD Reject"
+                      onClick={() => {
+                        setSelectedRequestId(request.id);
+                        setShowRejectModal(true);
+                      }}
+                     className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors flex items-center space-x-1"
                     >
-                      <X className="h-4 w-4" />
+                     <X className="h-3 w-3" />
+                     <span>MD Reject</span>
                     </button>
                     <button
                       onClick={() => navigate(`/approvals/requests/${request.id}`)}

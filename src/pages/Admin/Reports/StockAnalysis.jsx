@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Package, Calendar, Download, Filter, AlertTriangle } from 'lucide-react';
 import { materialService } from '../../../services/materialService';
 import { inventoryService } from '../../../services/inventoryService';
+import ErrorMessage from '../../../components/Common/ErrorMessage';
 
 const StockAnalysis = () => {
   const [dateRange, setDateRange] = useState('month');

@@ -1,423 +1,555 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, Clock, Package, FileText, Users, CheckSquare, X, Eye, AlertTriangle } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Package, ShoppingCart, Archive, AlertCircle, ArrowRight } from 'lucide-react';
 import { requestService } from '../../services/requestService';
+import { packingMaterialsService } from '../../services/packingMaterialsService';
 
 const ApprovalQueue = () => {
   const navigate = useNavigate();
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const [selectedRequestType, setSelectedRequestType] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
   const [activeTab, setActiveTab] = useState('material');
   const [materialRequests, setMaterialRequests] = useState([]);
   const [productRequests, setProductRequests] = useState([]);
+  const [packingMaterialRequests, setPackingMaterialRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [processingRequest, setProcessingRequest] = useState(null);
 
   useEffect(() => {
-    loadRequests();
+    loadPendingRequests();
   }, []);
 
-  const loadRequests = async () => {
+  const loadPendingRequests = async () => {
     try {
       setLoading(true);
-      const [materialData, productData] = await Promise.all([
-        requestService.getMaterialRequests({ status: 'pending' }),
-        requestService.getProductRequests({ status: 'pending' })
+      const [materials, products, packingMaterials] = await Promise.all([
+        requestService.getMaterialRequests({ status: 'pending' }).catch(() => []),
+        requestService.getProductRequests({ status: 'pending' }).catch(() => []),
+        packingMaterialsService.getPurchaseRequests({ status: 'pending_ho' }).catch(() => [])
       ]);
-      
-      setMaterialRequests(materialData);
-      setProductRequests(productData);
-    } catch (error) {
-      setError(error.message);
+
+      setMaterialRequests(materials);
+      setProductRequests(products);
+      setPackingMaterialRequests(packingMaterials);
+    } catch (err) {
+      setError('Failed to load pending requests');
+      console.error('Error loading requests:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleApproveMaterialRequest = async (requestId) => {
-    const notes = prompt('Add approval notes (will be forwarded to MD):');
-    if (notes !== null) { // User didn't cancel
-      try {
-        setProcessingRequest(requestId);
-        await requestService.approveRequest(requestId, { 
-          notes: notes || 'Approved by Head of Operations - forwarded to MD for final approval' 
-        });
-        await loadRequests();
-      } catch (error) {
-        setError(error.message);
-      } finally {
-        setProcessingRequest(null);
-      }
+  const handleHOApproveMaterialRequest = async (requestId) => {
+    try {
+      // HO approves and automatically forwards to MD
+      await requestService.approveRequest(requestId, { 
+        comments: 'Approved by Head of Operations' 
+      });
+      
+      // Then forward to MD
+      await requestService.forwardToMD(requestId, { 
+        comments: 'Forwarded for final MD approval' 
+      });
+      
+      await loadPendingRequests();
+    } catch (err) {
+      setError('Failed to HO approve material request');
+      console.error('Error approving request:', err);
     }
   };
 
-  const handleRejectMaterialRequest = async (requestId) => {
-    const reason = prompt('Please provide rejection reason:');
-    if (reason) {
-      try {
-        setProcessingRequest(requestId);
-        await requestService.rejectRequest(requestId, { reason });
-        await loadRequests();
-      } catch (error) {
-        setError(error.message);
-      } finally {
-        setProcessingRequest(null);
-      }
+  const handleRejectMaterialRequest = async (requestId, reason) => {
+    try {
+      await requestService.rejectRequest(requestId, { reason });
+      await loadPendingRequests();
+    } catch (err) {
+      setError('Failed to reject material request');
+      console.error('Error rejecting request:', err);
     }
   };
 
-  const handleApproveProductRequest = async (requestId) => {
-    const notes = prompt('Add approval notes:');
-    if (notes !== null) {
-      try {
-        setProcessingRequest(requestId);
-        await requestService.approveProductRequest(requestId, { 
-          notes: notes || 'Approved by Head of Operations' 
-        });
-        await loadRequests();
-      } catch (error) {
-        setError(error.message);
-      } finally {
-        setProcessingRequest(null);
-      }
+  const handleHOApproveProductRequest = async (requestId) => {
+    try {
+      // HO approves and automatically forwards to MD
+      await requestService.approveProductRequest(requestId, { 
+        comments: 'Approved by Head of Operations' 
+      });
+      
+      // Then forward to MD
+      await requestService.forwardProductToMD(requestId, { 
+        comments: 'Forwarded for final MD approval' 
+      });
+      
+      await loadPendingRequests();
+    } catch (err) {
+      setError('Failed to HO approve product request');
+      console.error('Error approving product request:', err);
     }
   };
 
-  const handleRejectProductRequest = async (requestId) => {
-    const reason = prompt('Please provide rejection reason:');
-    if (reason) {
-      try {
-        setProcessingRequest(requestId);
-        await requestService.rejectProductRequest(requestId, { reason });
-        await loadRequests();
-      } catch (error) {
-        setError(error.message);
-      } finally {
-        setProcessingRequest(null);
-      }
+  const handleRejectProductRequest = async (requestId, reason) => {
+    try {
+      await requestService.rejectProductRequest(requestId, { reason });
+      await loadPendingRequests();
+    } catch (err) {
+      setError('Failed to reject product request');
+      console.error('Error rejecting product request:', err);
     }
   };
 
-  const getUrgencyColor = (urgency) => {
-    switch (urgency) {
-      case 'urgent':
-        return 'bg-red-100 text-red-800';
-      case 'high':
-        return 'bg-orange-100 text-orange-800';
-      case 'normal':
-        return 'bg-blue-100 text-blue-800';
-      case 'low':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        return 'bg-blue-100 text-blue-800';
+  const handleHOApprovePackingMaterialRequest = async (requestId) => {
+    try {
+      // HO approves and automatically forwards to MD
+      await packingMaterialsService.approvePurchaseRequest(requestId, { 
+        notes: 'Approved by Head of Operations' 
+      });
+      
+      // Then forward to MD
+      await packingMaterialsService.forwardPurchaseRequestToMD(requestId, { 
+        comments: 'Forwarded for final MD approval' 
+      });
+      
+      await loadPendingRequests();
+    } catch (err) {
+      setError('Failed to HO approve packing material request');
+      console.error('Error approving packing material request:', err);
     }
   };
+
+  const handleForwardPackingMaterialToMD = async (requestId) => {
+    const comments = prompt('Add comments for MD (optional):');
+    try {
+      await packingMaterialsService.forwardPurchaseRequestToMD(requestId, { comments });
+      await loadPendingRequests();
+    } catch (err) {
+      setError('Failed to forward packing material request to MD');
+      console.error('Error forwarding packing material to MD:', err);
+    }
+  };
+  const handleRejectPackingMaterialRequest = async (requestId, reason) => {
+    try {
+      await packingMaterialsService.rejectPurchaseRequest(requestId, { reason });
+      await loadPendingRequests();
+    } catch (err) {
+      setError('Failed to reject packing material request');
+      console.error('Error rejecting packing material request:', err);
+    }
+  };
+
+  const confirmReject = () => {
+    if (selectedRequestId && rejectionReason.trim()) {
+      if (selectedRequestType === 'material') {
+        handleRejectMaterialRequest(selectedRequestId, rejectionReason);
+      } else if (selectedRequestType === 'product') {
+        handleRejectProductRequest(selectedRequestId, rejectionReason);
+      } else if (selectedRequestType === 'packing') {
+        handleRejectPackingMaterialRequest(selectedRequestId, rejectionReason);
+      }
+      setShowRejectModal(false);
+      setSelectedRequestId(null);
+      setSelectedRequestType('');
+      setRejectionReason('');
+    }
+  };
+
+  const tabs = [
+    { id: 'material', label: 'Material Requests', icon: Package, count: materialRequests.length },
+    { id: 'product', label: 'Product Requests', icon: ShoppingCart, count: productRequests.length },
+    { id: 'packing', label: 'Packing Material', icon: Archive, count: packingMaterialRequests.length }
+  ];
 
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="space-y-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded"></div>
-            ))}
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading pending requests...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-          <CheckCircle className="h-8 w-8 mr-3 text-blue-600" />
-          Approval Queue
-        </h1>
-        <p className="text-gray-600">Review and approve material and product requests</p>
-      </div>
-
-      {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Tab Navigation */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button
-              onClick={() => setActiveTab('material')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                activeTab === 'material'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <Package className="h-4 w-4" />
-              <span>Material Requests</span>
-              {materialRequests.length > 0 && (
-                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                  {materialRequests.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('product')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                activeTab === 'product'
-                  ? 'border-green-500 text-green-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FileText className="h-4 w-4" />
-              <span>Product Requests</span>
-              {productRequests.length > 0 && (
-                <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
-                  {productRequests.length}
-                </span>
-              )}
-            </button>
-          </nav>
-        </div>
-
-        <div className="p-6">
-          {activeTab === 'material' && (
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Material Requests Pending HO Approval</h3>
-                <div className="text-sm text-gray-500">
-                  {materialRequests.length} requests awaiting review
-                </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Rejection Modal */}
+        {showRejectModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Reject Request</h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for rejection *
+                </label>
+                <textarea
+                  rows={3}
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="Please provide a detailed reason for rejection..."
+                />
               </div>
+              <div className="flex items-center justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowRejectModal(false);
+                    setSelectedRequestId(null);
+                    setSelectedRequestType('');
+                    setRejectionReason('');
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmReject}
+                  disabled={!rejectionReason.trim()}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Reject Request
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
-              <div className="space-y-6">
-                {materialRequests.map((request) => (
-                  <div key={request.id} className="border border-gray-200 rounded-lg p-6 bg-white hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-4">
-                          <Package className="h-6 w-6 text-blue-600" />
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Approval Queue</h1>
+          <p className="mt-2 text-gray-600">Review and approve pending requests</p>
+        </div>
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
+            <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+            <span className="text-red-700">{error}</span>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="bg-white rounded-lg shadow-sm mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8 px-6">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                      activeTab === tab.id
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span>{tab.label}</span>
+                    {tab.count > 0 && (
+                      <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div className="p-6">
+            {/* Material Requests Tab */}
+            {activeTab === 'material' && (
+              <div>
+                {materialRequests.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">No pending material requests</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {materialRequests.map((request) => (
+                      <div key={request.id} className="border border-gray-200 rounded-lg p-6">
+                        <div className="flex justify-between items-start mb-4">
                           <div>
-                            <h4 className="font-semibold text-gray-900 text-lg">
-                              {request.requestType === 'rawMaterial' ? 'Raw Material' : 'Packing Material'} Request
-                            </h4>
-                            <p className="text-sm text-gray-500">Request ID: {request.id}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-sm text-gray-500">Material:</p>
-                            <p className="font-medium text-gray-900">{request.items?.[0]?.materialName}</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-sm text-gray-500">Quantity:</p>
-                            <p className="font-medium text-gray-900">
-                              {request.items?.[0]?.quantity} {request.items?.[0]?.unit}
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              Raw Material Request
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              Requested by: {request.requestedByName || 'Warehouse Staff'}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Date: {new Date(request.createdAt?.toDate?.() || request.createdAt).toLocaleDateString()}
                             </p>
                           </div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-sm text-gray-500">Requested By:</p>
-                            <p className="font-medium text-gray-900">{request.requesterName || 'Warehouse Staff'}</p>
-                          </div>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pending
+                          </span>
                         </div>
 
                         <div className="mb-4">
-                          <p className="text-sm text-gray-500 mb-2">Purpose/Reason:</p>
-                          <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">
-                            {request.items?.[0]?.reason || 'No specific reason provided'}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center space-x-4">
-                          <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getUrgencyColor(request.items?.[0]?.urgency)}`}>
-                            {request.items?.[0]?.urgency?.toUpperCase() || 'NORMAL'} Priority
-                          </span>
-                          <span className="text-sm text-gray-500">
-                            Submitted: {new Date(request.createdAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col space-y-2 ml-6">
-                        <button
-                          onClick={() => handleApproveMaterialRequest(request.id)}
-                          disabled={processingRequest === request.id}
-                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
-                        >
-                          <CheckSquare className="h-4 w-4" />
-                          <span>Approve & Forward to MD</span>
-                        </button>
-                        <button
-                          onClick={() => handleRejectMaterialRequest(request.id)}
-                          disabled={processingRequest === request.id}
-                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
-                        >
-                          <X className="h-4 w-4" />
-                          <span>Reject Request</span>
-                        </button>
-                        <button
-                          onClick={() => navigate(`/approvals/material-requests/${request.id}`)}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
-                        >
-                          <Eye className="h-4 w-4" />
-                          <span>View Details</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {materialRequests.length === 0 && (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg">
-                    <Package className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No pending material requests</h3>
-                    <p className="mt-1 text-sm text-gray-500">All material requests have been processed</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'product' && (
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Product Requests from DRs/Distributors</h3>
-                <div className="text-sm text-gray-500">
-                  {productRequests.length} requests awaiting approval
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {productRequests.map((request) => (
-                  <div key={request.id} className="border border-gray-200 rounded-lg p-6 bg-white hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-4">
-                          <FileText className="h-6 w-6 text-green-600" />
-                          <div>
-                            <h4 className="font-semibold text-gray-900 text-lg">Product Distribution Request</h4>
-                            <p className="text-sm text-gray-500">Request ID: {request.id}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-sm text-gray-500">Product:</p>
-                            <p className="font-medium text-gray-900">{request.productName || 'Product Details'}</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-sm text-gray-500">Quantity:</p>
-                            <p className="font-medium text-gray-900">{request.quantity || 'N/A'} units</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-sm text-gray-500">Requester:</p>
-                            <p className="font-medium text-gray-900">
-                              {request.requesterType === 'DR' ? 'Direct Representative' :
-                               request.requesterType === 'Distributor' ? 'Distributor' :
-                               request.requesterType === 'DS' ? 'Direct Showroom' : 'Unknown'}
-                            </p>
+                          <p className="text-sm font-medium text-gray-700 mb-2">Requested Materials:</p>
+                          <div className="space-y-2">
+                            {request.items?.map((item, index) => (
+                              <div key={index} className="flex justify-between items-center bg-gray-50 p-3 rounded">
+                                <div>
+                                  <p className="font-medium text-gray-900">{item.materialName}</p>
+                                  <p className="text-sm text-gray-500">Reason: {item.reason}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-medium text-gray-900">{item.quantity} {item.unit}</p>
+                                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                    item.urgency === 'urgent' ? 'bg-red-100 text-red-800' :
+                                    item.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
+                                    item.urgency === 'normal' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {item.urgency?.toUpperCase()}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
 
                         {request.notes && (
                           <div className="mb-4">
-                            <p className="text-sm text-gray-500 mb-2">Request Notes:</p>
-                            <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">{request.notes}</p>
+                            <p className="text-sm font-medium text-gray-700">Additional Notes</p>
+                            <p className="text-sm text-gray-900">{request.notes}</p>
                           </div>
                         )}
 
-                        <div className="flex items-center space-x-4">
-                          <span className="text-sm text-gray-500">
-                            Submitted: {new Date(request.createdAt).toLocaleDateString()}
-                          </span>
-                          {request.urgency && (
-                            <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getUrgencyColor(request.urgency)}`}>
-                              {request.urgency.toUpperCase()} Priority
-                            </span>
-                          )}
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={() => handleHOApproveMaterialRequest(request.id)}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            HO Approve & Forward to MD
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedRequestId(request.id);
+                              setSelectedRequestType('material');
+                              setShowRejectModal(true);
+                            }}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            HO Reject
+                          </button>
                         </div>
                       </div>
-
-                      <div className="flex flex-col space-y-2 ml-6">
-                        <button
-                          onClick={() => handleApproveProductRequest(request.id)}
-                          disabled={processingRequest === request.id}
-                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
-                        >
-                          <CheckSquare className="h-4 w-4" />
-                          <span>Approve Request</span>
-                        </button>
-                        <button
-                          onClick={() => handleRejectProductRequest(request.id)}
-                          disabled={processingRequest === request.id}
-                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors disabled:opacity-50"
-                        >
-                          <X className="h-4 w-4" />
-                          <span>Reject Request</span>
-                        </button>
-                        <button
-                          onClick={() => navigate(`/approvals/product-requests/${request.id}`)}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
-                        >
-                          <Eye className="h-4 w-4" />
-                          <span>View Details</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {productRequests.length === 0 && (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg">
-                    <FileText className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No pending product requests</h3>
-                    <p className="mt-1 text-sm text-gray-500">All product requests have been processed</p>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
 
-      {/* Summary Cards */}
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-blue-50 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-blue-600">Total Pending</p>
-              <p className="text-2xl font-bold text-blue-900">
-                {materialRequests.length + productRequests.length}
-              </p>
-            </div>
-            <Clock className="h-8 w-8 text-blue-600" />
+            {/* Product Requests Tab */}
+            {activeTab === 'product' && (
+              <div>
+                {productRequests.length === 0 ? (
+                  <div className="text-center py-12">
+                    <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">No pending product requests</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {productRequests.map((request) => (
+                      <div key={request.id} className="border border-gray-200 rounded-lg p-6">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              Product Request
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              Requested by: {request.requestedByName || 'Packing Area Manager'}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Date: {new Date(request.createdAt?.toDate?.() || request.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pending
+                          </span>
+                        </div>
+
+                        <div className="mb-4">
+                          <p className="text-sm font-medium text-gray-700 mb-2">Requested Products:</p>
+                          <div className="space-y-2">
+                            {request.items?.map((item, index) => (
+                              <div key={index} className="flex justify-between items-center bg-gray-50 p-3 rounded">
+                                <div>
+                                  <p className="font-medium text-gray-900">{item.productName}</p>
+                                  <p className="text-sm text-gray-500">Purpose: {item.purpose}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-medium text-gray-900">{item.quantity} {item.unit}</p>
+                                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                    item.urgency === 'urgent' ? 'bg-red-100 text-red-800' :
+                                    item.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
+                                    item.urgency === 'normal' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {item.urgency?.toUpperCase()}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {request.notes && (
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-gray-700">Additional Notes</p>
+                            <p className="text-sm text-gray-900">{request.notes}</p>
+                          </div>
+                        )}
+
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={() => handleHOApproveProductRequest(request.id)}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Approve & Forward to MD
+                          </button>
+                          <button
+                            onClick={() => {
+                              const reason = prompt('Please provide a reason for rejection:');
+                              if (reason) {
+                                handleRejectProductRequest(request.id, { reason });
+                              }
+                            }}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Packing Material Requests Tab */}
+            {activeTab === 'packing' && (
+              <div>
+                {packingMaterialRequests.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Archive className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">No pending packing material requests</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {packingMaterialRequests.map((request) => (
+                      <div key={request.id} className="border border-gray-200 rounded-lg p-6">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              Packing Material Purchase Request
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              Requested by: {request.requestedByName || 'Packing Materials Store Manager'}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Date: {new Date(request.createdAt?.toDate?.() || request.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pending
+                          </span>
+                        </div>
+
+                        {request.items && request.items.length > 0 && (
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-gray-700 mb-2">Requested Items</p>
+                            <div className="space-y-2">
+                              {request.items.map((item, index) => (
+                                <div key={index} className="flex justify-between items-center bg-gray-50 p-3 rounded">
+                                  <div>
+                                    <p className="font-medium text-gray-900">{item.materialName}</p>
+                                    <p className="text-sm text-gray-500">Notes: {item.notes || 'No additional notes'}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-medium text-gray-900">{item.quantity} {item.unit}</p>
+                                    <p className="text-sm text-gray-500">Est. ${(item.estimatedPrice || 0).toFixed(2)}/{item.unit}</p>
+                                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                      item.urgency === 'urgent' ? 'bg-red-100 text-red-800' :
+                                      item.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
+                                      item.urgency === 'normal' ? 'bg-blue-100 text-blue-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {item.urgency?.toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm font-medium text-blue-700">Total Items</p>
+                              <p className="text-sm text-blue-900">{request.items?.length || 0}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-blue-700">Budget Estimate</p>
+                              <p className="text-sm text-blue-900">${(request.budgetEstimate || request.calculatedBudget || 0).toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {request.justification && (
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-gray-700">Justification</p>
+                            <p className="text-sm text-gray-900">{request.justification}</p>
+                          </div>
+                        )}
+
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={() => handleHOApprovePackingMaterialRequest(request.id)}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            HO Approve & Forward to MD
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedRequestId(request.id);
+                              setSelectedRequestType('packing');
+                              setShowRejectModal(true);
+                            }}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            HO Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <p className="text-sm text-blue-700 mt-2">Requests awaiting your approval</p>
         </div>
 
-        <div className="bg-green-50 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-green-600">Material Requests</p>
-              <p className="text-2xl font-bold text-green-900">{materialRequests.length}</p>
-            </div>
-            <Package className="h-8 w-8 text-green-600" />
-          </div>
-          <p className="text-sm text-green-700 mt-2">Raw & packing materials</p>
-        </div>
-
-        <div className="bg-purple-50 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-purple-600">Product Requests</p>
-              <p className="text-2xl font-bold text-purple-900">{productRequests.length}</p>
-            </div>
-            <Users className="h-8 w-8 text-purple-600" />
-          </div>
-          <p className="text-sm text-purple-700 mt-2">From DRs/Distributors/DS</p>
+        <div className="flex justify-center">
+          <button
+            onClick={() => navigate('/ho-dashboard')}
+            className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            Back to Dashboard
+          </button>
         </div>
       </div>
     </div>

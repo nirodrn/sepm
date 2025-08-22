@@ -1,19 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, Clock, Users, TrendingUp, Eye, CheckSquare, X, AlertTriangle, Package, FileText } from 'lucide-react';
+import { 
+  ClipboardList, 
+  Users, 
+  TrendingUp, 
+  AlertCircle, 
+  CheckCircle, 
+  XCircle,
+  Package,
+  ShoppingCart,
+  FileText
+} from 'lucide-react';
 import { requestService } from '../../services/requestService';
 import { supplierService } from '../../services/supplierService';
 import { grnService } from '../../services/grnService';
+import { packingMaterialsService } from '../../services/packingMaterialsService';
+import LoadingSpinner from '../../components/Common/LoadingSpinner';
+import ErrorMessage from '../../components/Common/ErrorMessage';
 
-const HeadOfOperationsDashboard = () => {
+const Dashboard = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState([]);
-  const [pendingMaterialRequests, setPendingMaterialRequests] = useState([]);
-  const [pendingProductRequests, setPendingProductRequests] = useState([]);
-  const [recentDeliveries, setRecentDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('overview');
+  const [error, setError] = useState(null);
+  const [dashboardData, setDashboardData] = useState({
+    pendingMaterialRequests: 0,
+    pendingProductRequests: 0,
+    pendingPackingMaterialRequests: 0,
+    activeSuppliers: 0,
+    pendingGRNs: 0
+  });
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [recentActivities, setRecentActivities] = useState([]);
 
   useEffect(() => {
     loadDashboardData();
@@ -21,554 +38,298 @@ const HeadOfOperationsDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [materialRequests, productRequests, suppliers, grns] = await Promise.all([
-        requestService.getMaterialRequests({ status: 'pending' }),
-        requestService.getProductRequests({ status: 'pending' }),
-        supplierService.getSuppliers(),
-        grnService.getGRNs()
+      setLoading(true);
+      setError(null);
+
+      const [
+        materialRequests,
+        productRequests,
+        packingMaterialRequests,
+        suppliers,
+        grns
+      ] = await Promise.all([
+        requestService.getMaterialRequests({ status: 'pending' }).catch(() => []),
+        requestService.getProductRequests({ status: 'pending' }).catch(() => []),
+        packingMaterialsService.getPurchaseRequests({ status: 'pending_ho' }).catch(() => []),
+        supplierService.getSuppliers().catch(() => []),
+        grnService.getGRNs().catch(() => [])
       ]);
 
       const pendingMaterialCount = materialRequests.length;
       const pendingProductCount = productRequests.length;
+      const pendingPackingMaterialCount = packingMaterialRequests.filter(req => req.status === 'pending_ho').length;
       const activeSuppliers = suppliers.filter(s => s.status === 'active').length;
-      
-      // Calculate approvals this week
-      const weekStart = new Date();
-      weekStart.setDate(weekStart.getDate() - 7);
-      const approvedThisWeek = await requestService.getMaterialRequests({ 
-        status: 'ho_approved',
-        dateFrom: weekStart.getTime()
+      const pendingGRNCount = grns.filter(grn => grn.status === 'pending').length;
+
+      setDashboardData({
+        pendingMaterialRequests: pendingMaterialCount,
+        pendingProductRequests: pendingProductCount,
+        pendingPackingMaterialRequests: pendingPackingMaterialCount,
+        activeSuppliers,
+        pendingGRNs: pendingGRNCount
       });
 
-      setStats([
-        {
-          name: 'Pending Material Requests',
-          value: pendingMaterialCount.toString(),
-          change: 'Awaiting HO approval',
-          changeType: 'neutral',
-          icon: Clock,
-          color: 'yellow'
-        },
-        {
-          name: 'Pending Product Requests',
-          value: pendingProductCount.toString(),
-          change: 'From DRs/Distributors',
-          changeType: 'neutral',
-          icon: Users,
-          color: 'blue'
-        },
-        {
-          name: 'Active Suppliers',
-          value: activeSuppliers.toString(),
-          change: 'Performance monitoring',
-          changeType: 'neutral',
-          icon: TrendingUp,
-          color: 'green'
-        },
-        {
-          name: 'Approved This Week',
-          value: approvedThisWeek.length.toString(),
-          change: 'Requests processed',
-          changeType: 'positive',
-          icon: CheckCircle,
-          color: 'purple'
-        }
-      ]);
+      // Combine all pending requests for approval queue
+      const allPendingRequests = [
+        ...materialRequests.filter(req => req.status === 'pending').map(req => ({
+          ...req,
+          type: 'material',
+          title: `Material Request - ${req.materialName || 'Unknown Material'}`
+        })),
+        ...productRequests.filter(req => req.status === 'pending').map(req => ({
+          ...req,
+          type: 'product',
+          title: `Product Request - ${req.productName || 'Unknown Product'}`
+        })),
+        ...packingMaterialRequests.filter(req => req.status === 'pending_ho').map(req => ({
+          ...req,
+          type: 'packing',
+          title: `Packing Material Request - ${req.items?.[0]?.materialName || 'Multiple Items'}`
+        }))
+      ];
 
-      setPendingMaterialRequests(materialRequests);
-      setPendingProductRequests(productRequests);
+      setPendingApprovals(allPendingRequests.slice(0, 5)); // Show only first 5
 
-      // Recent deliveries with QC results
-      const recentGRNs = grns.slice(0, 5).map(grn => ({
-        ...grn,
-        supplierName: suppliers.find(s => s.id === grn.supplierId)?.name || 'Unknown',
-        qcStatus: grn.status,
-        deliveryDate: new Date(grn.deliveryDate).toLocaleDateString()
-      }));
-      
-      setRecentDeliveries(recentGRNs);
-    } catch (error) {
-      setError(error.message);
+      // Generate recent activities
+      const activities = [
+        ...materialRequests.slice(0, 3).map(req => ({
+          type: 'material_request',
+          message: `Material request for ${req.materialName || 'Unknown Material'} ${req.status}`,
+          timestamp: req.createdAt || new Date().toISOString(),
+          status: req.status
+        })),
+        ...productRequests.slice(0, 2).map(req => ({
+          type: 'product_request',
+          message: `Product request for ${req.productName || 'Unknown Product'} ${req.status}`,
+          timestamp: req.createdAt || new Date().toISOString(),
+          status: req.status
+        }))
+      ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 5);
+
+      setRecentActivities(activities);
+
+    } catch (err) {
+      console.error('Error loading dashboard data:', err);
+      setError('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleApproveMaterialRequest = async (requestId) => {
-    const notes = prompt('Add approval notes (optional):');
+  const handleApproval = async (requestId, action, requestType) => {
     try {
-      await requestService.approveRequest(requestId, { notes: notes || 'Approved by HO' });
-      await loadDashboardData();
-    } catch (error) {
-      setError(error.message);
-    }
-  };
-
-  const handleRejectMaterialRequest = async (requestId) => {
-    const reason = prompt('Please provide rejection reason:');
-    if (reason) {
-      try {
-        await requestService.rejectRequest(requestId, { reason });
-        await loadDashboardData();
-      } catch (error) {
-        setError(error.message);
+      if (requestType === 'material') {
+        if (action === 'approve') {
+          await requestService.approveRequest(requestId);
+        } else {
+          await requestService.rejectRequest(requestId);
+        }
+      } else if (requestType === 'product') {
+        if (action === 'approve') {
+          await requestService.approveProductRequest(requestId);
+        } else {
+          await requestService.rejectProductRequest(requestId);
+        }
+      } else if (requestType === 'packing') {
+        if (action === 'approve') {
+          await packingMaterialsService.approvePurchaseRequest(requestId);
+        } else {
+          await packingMaterialsService.rejectPurchaseRequest(requestId);
+        }
       }
-    }
-  };
 
-  const handleApproveProductRequest = async (requestId) => {
-    const notes = prompt('Add approval notes (optional):');
-    try {
-      await requestService.approveProductRequest(requestId, { notes: notes || 'Approved by HO' });
-      await loadDashboardData();
-    } catch (error) {
-      setError(error.message);
-    }
-  };
-
-  const handleRejectProductRequest = async (requestId) => {
-    const reason = prompt('Please provide rejection reason:');
-    if (reason) {
-      try {
-        await requestService.rejectProductRequest(requestId, { reason });
-        await loadDashboardData();
-      } catch (error) {
-        setError(error.message);
-      }
-    }
-  };
-
-  const colorClasses = {
-    yellow: 'bg-yellow-100 text-yellow-600',
-    blue: 'bg-blue-100 text-blue-600',
-    green: 'bg-green-100 text-green-600',
-    purple: 'bg-purple-100 text-purple-600'
-  };
-
-  const getQCStatusColor = (status) => {
-    switch (status) {
-      case 'qc_passed':
-        return 'bg-green-100 text-green-800';
-      case 'qc_failed':
-        return 'bg-red-100 text-red-800';
-      case 'pending_qc':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      // Reload data after approval/rejection
+      loadDashboardData();
+    } catch (err) {
+      console.error('Error processing approval:', err);
+      setError('Failed to process approval. Please try again.');
     }
   };
 
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded"></div>
-            ))}
-          </div>
-        </div>
+      <div className="flex justify-center items-center min-h-screen">
+        <LoadingSpinner />
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-          <CheckCircle className="h-8 w-8 mr-3 text-blue-600" />
-          Head of Operations Dashboard
-        </h1>
-        <p className="text-gray-600">Central approval authority and operations coordinator</p>
-      </div>
-
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Error Display */}
       {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-          {error}
+        <div className="mb-6">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
+              <span className="text-red-800 font-medium">Error:</span>
+            </div>
+            <p className="text-red-700 mt-1">{error}</p>
+          </div>
         </div>
       )}
 
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Head of Operations Dashboard</h1>
+        <p className="text-gray-600 mt-2">Monitor and manage all operational activities</p>
+      </div>
+
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {stats.map((stat) => (
-          <div key={stat.name} className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">{stat.name}</p>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-              </div>
-              <div className={`h-12 w-12 rounded-lg flex items-center justify-center ${colorClasses[stat.color]}`}>
-                <stat.icon className="h-6 w-6" />
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Pending Material Requests</p>
+              <p className="text-2xl font-bold text-blue-600">{dashboardData.pendingMaterialRequests}</p>
             </div>
-            <div className="mt-4">
-              <span className="text-sm font-medium text-gray-600">{stat.change}</span>
-            </div>
+            <Package className="w-8 h-8 text-blue-600" />
           </div>
-        ))}
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            {[
-              { id: 'overview', name: 'Overview', icon: Eye },
-              { id: 'material-approvals', name: 'Material Approvals', icon: Package },
-              { id: 'product-approvals', name: 'Product Approvals', icon: FileText },
-              { id: 'supplier-monitoring', name: 'Supplier Monitoring', icon: TrendingUp }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <tab.icon className="h-4 w-4" />
-                <span>{tab.name}</span>
-              </button>
-            ))}
-          </nav>
         </div>
 
-        <div className="p-6">
-          {activeTab === 'overview' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Supplier Deliveries</h3>
-                <div className="space-y-4">
-                  {recentDeliveries.map((delivery, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
-                      <div>
-                        <p className="font-medium text-gray-900">{delivery.supplierName}</p>
-                        <p className="text-sm text-gray-500">GRN: {delivery.grnNumber} • {delivery.deliveryDate}</p>
-                      </div>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getQCStatusColor(delivery.qcStatus)}`}>
-                        {delivery.qcStatus?.replace('_', ' ').toUpperCase()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Pending Product Requests</p>
+              <p className="text-2xl font-bold text-green-600">{dashboardData.pendingProductRequests}</p>
+            </div>
+            <ShoppingCart className="w-8 h-8 text-green-600" />
+          </div>
+        </div>
 
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-                <div className="space-y-3">
-                  <button 
-                    onClick={() => setActiveTab('material-approvals')}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg flex items-center justify-between transition-colors"
-                  >
-                    <span>Review Material Requests</span>
-                    <span className="bg-blue-500 text-white px-2 py-1 rounded-full text-xs">
-                      {pendingMaterialRequests.length}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Pending Packing Requests</p>
+              <p className="text-2xl font-bold text-purple-600">{dashboardData.pendingPackingMaterialRequests}</p>
+            </div>
+            <FileText className="w-8 h-8 text-purple-600" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Suppliers</p>
+              <p className="text-2xl font-bold text-orange-600">{dashboardData.activeSuppliers}</p>
+            </div>
+            <Users className="w-8 h-8 text-orange-600" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Pending GRNs</p>
+              <p className="text-2xl font-bold text-red-600">{dashboardData.pendingGRNs}</p>
+            </div>
+            <ClipboardList className="w-8 h-8 text-red-600" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Pending Approvals */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Pending Approvals</h3>
+          {pendingApprovals.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No pending approvals at the moment</p>
+          ) : (
+            <div className="space-y-4">
+              {pendingApprovals.map((request, index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-medium text-gray-900">{request.title}</h4>
+                    <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                      Pending
                     </span>
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('product-approvals')}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white p-3 rounded-lg flex items-center justify-between transition-colors"
-                  >
-                    <span>Review Product Requests</span>
-                    <span className="bg-green-500 text-white px-2 py-1 rounded-full text-xs">
-                      {pendingProductRequests.length}
-                    </span>
-                  </button>
-                  <button 
-                    onClick={() => navigate('/reports/supplier-performance')}
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-lg flex items-center justify-center transition-colors"
-                  >
-                    <TrendingUp className="h-4 w-4 mr-2" />
-                    <span>Supplier Performance</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'material-approvals' && (
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Material Request Approvals</h3>
-                <span className="text-sm text-gray-500">
-                  {pendingMaterialRequests.length} pending requests
-                </span>
-              </div>
-              
-              <div className="space-y-4">
-                {pendingMaterialRequests.map((request) => (
-                  <div key={request.id} className="border border-gray-200 rounded-lg p-6 bg-white">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-3">
-                          <Package className="h-5 w-5 text-blue-600" />
-                          <h4 className="font-semibold text-gray-900">
-                            {request.requestType === 'rawMaterial' ? 'Raw Material' : 'Packing Material'} Request
-                          </h4>
-                          <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
-                            Pending HO Approval
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                          <div>
-                            <p className="text-sm text-gray-500">Requested Material:</p>
-                            <p className="font-medium text-gray-900">{request.items?.[0]?.materialName}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500">Quantity:</p>
-                            <p className="font-medium text-gray-900">
-                              {request.items?.[0]?.quantity} {request.items?.[0]?.unit}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500">Requested By:</p>
-                            <p className="font-medium text-gray-900">{request.requesterName || 'Warehouse Staff'}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500">Request Date:</p>
-                            <p className="font-medium text-gray-900">
-                              {new Date(request.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-
-                        {request.items?.[0]?.reason && (
-                          <div className="mb-4">
-                            <p className="text-sm text-gray-500">Purpose:</p>
-                            <p className="text-gray-700">{request.items[0].reason}</p>
-                          </div>
-                        )}
-
-                        <div className="flex items-center space-x-2">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            request.items?.[0]?.urgency === 'urgent' ? 'bg-red-100 text-red-800' :
-                            request.items?.[0]?.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
-                            'bg-blue-100 text-blue-800'
-                          }`}>
-                            {request.items?.[0]?.urgency?.toUpperCase() || 'NORMAL'} Priority
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2 ml-4">
-                        <button
-                          onClick={() => handleApproveMaterialRequest(request.id)}
-                          className="text-green-600 hover:text-green-800 p-2 rounded-lg bg-green-50 hover:bg-green-100 transition-colors"
-                          title="Approve & Forward to MD"
-                        >
-                          <CheckSquare className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleRejectMaterialRequest(request.id)}
-                          className="text-red-600 hover:text-red-800 p-2 rounded-lg bg-red-50 hover:bg-red-100 transition-colors"
-                          title="Reject Request"
-                        >
-                          <X className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => navigate(`/approvals/material-requests/${request.id}`)}
-                          className="text-blue-600 hover:text-blue-800 p-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </div>
                   </div>
-                ))}
-
-                {pendingMaterialRequests.length === 0 && (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg">
-                    <Package className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No pending material requests</h3>
-                    <p className="mt-1 text-sm text-gray-500">All material requests have been processed</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'product-approvals' && (
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Product Request Approvals</h3>
-                <span className="text-sm text-gray-500">
-                  {pendingProductRequests.length} pending requests
-                </span>
-              </div>
-              
-              <div className="space-y-4">
-                {pendingProductRequests.map((request) => (
-                  <div key={request.id} className="border border-gray-200 rounded-lg p-6 bg-white">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-3">
-                          <FileText className="h-5 w-5 text-green-600" />
-                          <h4 className="font-semibold text-gray-900">Product Distribution Request</h4>
-                          <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                            Pending HO Approval
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                          <div>
-                            <p className="text-sm text-gray-500">Requested Product:</p>
-                            <p className="font-medium text-gray-900">{request.productName || 'Product Details'}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500">Quantity:</p>
-                            <p className="font-medium text-gray-900">{request.quantity || 'N/A'} units</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500">Requester Type:</p>
-                            <p className="font-medium text-gray-900">
-                              {request.requesterType === 'DR' ? 'Direct Representative' :
-                               request.requesterType === 'Distributor' ? 'Distributor' :
-                               request.requesterType === 'DS' ? 'Direct Showroom' : 'Unknown'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500">Request Date:</p>
-                            <p className="font-medium text-gray-900">
-                              {new Date(request.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-
-                        {request.notes && (
-                          <div className="mb-4">
-                            <p className="text-sm text-gray-500">Notes:</p>
-                            <p className="text-gray-700">{request.notes}</p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-2 ml-4">
-                        <button
-                          onClick={() => handleApproveProductRequest(request.id)}
-                          className="text-green-600 hover:text-green-800 p-2 rounded-lg bg-green-50 hover:bg-green-100 transition-colors"
-                          title="Approve Request"
-                        >
-                          <CheckSquare className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleRejectProductRequest(request.id)}
-                          className="text-red-600 hover:text-red-800 p-2 rounded-lg bg-red-50 hover:bg-red-100 transition-colors"
-                          title="Reject Request"
-                        >
-                          <X className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => navigate(`/approvals/product-requests/${request.id}`)}
-                          className="text-blue-600 hover:text-blue-800 p-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {pendingProductRequests.length === 0 && (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg">
-                    <FileText className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No pending product requests</h3>
-                    <p className="mt-1 text-sm text-gray-500">All product requests have been processed</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'supplier-monitoring' && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">Supplier Performance Monitoring</h3>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <h4 className="font-medium text-gray-900 mb-4">Recent QC Results by Supplier</h4>
-                  <div className="space-y-3">
-                    {recentDeliveries.map((delivery, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                        <div>
-                          <p className="font-medium text-gray-900">{delivery.supplierName}</p>
-                          <p className="text-sm text-gray-500">Delivery: {delivery.deliveryDate}</p>
-                        </div>
-                        <div className="text-right">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getQCStatusColor(delivery.qcStatus)}`}>
-                            {delivery.qcStatus?.replace('_', ' ').toUpperCase()}
-                          </span>
-                          {delivery.qcData?.overallGrade && (
-                            <p className="text-xs text-gray-500 mt-1">Grade: {delivery.qcData.overallGrade}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  <p className="text-sm text-gray-600 mb-3">
+                    Requested: {new Date(request.createdAt || Date.now()).toLocaleDateString()}
+                  </p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleApproval(request.id, 'approve', request.type)}
+                      className="flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                    >
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleApproval(request.id, 'reject', request.type)}
+                      className="flex items-center px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                    >
+                      <XCircle className="w-4 h-4 mr-1" />
+                      Reject
+                    </button>
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <h4 className="font-medium text-gray-900 mb-4">Supplier Alerts</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 mr-3" />
-                      <div>
-                        <p className="text-sm font-medium text-yellow-800">Price Variance Alert</p>
-                        <p className="text-xs text-yellow-600">Supplier A: +15% price increase detected</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
-                      <AlertTriangle className="h-5 w-5 text-red-600 mr-3" />
-                      <div>
-                        <p className="text-sm font-medium text-red-800">Quality Issue</p>
-                        <p className="text-xs text-red-600">Supplier B: 2 consecutive QC failures</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <Clock className="h-5 w-5 text-blue-600 mr-3" />
-                      <div>
-                        <p className="text-sm font-medium text-blue-800">Delivery Delay</p>
-                        <p className="text-xs text-blue-600">Supplier C: 3 days overdue</p>
-                      </div>
-                    </div>
+        {/* Recent Activities */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activities</h3>
+          {recentActivities.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No recent activities</p>
+          ) : (
+            <div className="space-y-4">
+              {recentActivities.map((activity, index) => (
+                <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                  <div className={`p-1 rounded-full ${
+                    activity.status === 'approved' ? 'bg-green-100' :
+                    activity.status === 'rejected' ? 'bg-red-100' :
+                    'bg-yellow-100'
+                  }`}>
+                    {activity.status === 'approved' ? (
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    ) : activity.status === 'rejected' ? (
+                      <XCircle className="w-4 h-4 text-red-600" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-yellow-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-900">{activity.message}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(activity.timestamp).toLocaleString()}
+                    </p>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <button 
-          onClick={() => navigate('/approvals/history')}
-          className="bg-gray-600 hover:bg-gray-700 text-white p-4 rounded-lg flex items-center justify-center space-x-2 transition-colors"
+      {/* Navigation Buttons */}
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          onClick={() => navigate('/ho/approval-queue')}
+          className="flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
-          <Clock className="h-5 w-5" />
-          <span>Request History</span>
+          <ClipboardList className="w-5 h-5 mr-2" />
+          Approval Queue
         </button>
-        <button 
-          onClick={() => navigate('/reports/supplier-performance')}
-          className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-lg flex items-center justify-center space-x-2 transition-colors"
+        <button
+          onClick={() => navigate('/ho/request-history')}
+          className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
         >
-          <TrendingUp className="h-5 w-5" />
-          <span>Supplier Reports</span>
+          <FileText className="w-5 h-5 mr-2" />
+          Request History
         </button>
-        <button 
-          onClick={() => navigate('/reports/material-flow')}
-          className="bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-lg flex items-center justify-center space-x-2 transition-colors"
+        <button
+          onClick={() => navigate('/ho/supplier-monitoring')}
+          className="flex items-center justify-center px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
         >
-          <Package className="h-5 w-5" />
-          <span>Material Flow Analysis</span>
+          <TrendingUp className="w-5 h-5 mr-2" />
+          Supplier Monitoring
         </button>
       </div>
     </div>
   );
 };
 
-export default HeadOfOperationsDashboard;
+export default Dashboard;

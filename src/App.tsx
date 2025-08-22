@@ -23,6 +23,10 @@ import ProductionDashboard from './pages/Production/Dashboard';
 import FinishedGoodsStoreDashboard from './pages/FinishedGoodsStore/Dashboard';
 import PackingMaterialsStoreDashboard from './pages/PackingMaterialsStore/Dashboard';
 import PackingAreaDashboard from './pages/PackingArea/Dashboard';
+import RequestMaterials from './pages/PackingArea/RequestMaterials';
+import InternalRequestsList from './pages/PackingMaterialsStore/InternalRequestsList';
+import PurchaseRequestHistory from './pages/PackingMaterialsStore/PurchaseRequestHistory';
+import DispatchHistory from './pages/PackingMaterialsStore/DispatchHistory';
 
 // Head of Operations Pages
 import ApprovalQueue from './pages/HeadOfOperations/ApprovalQueue';
@@ -67,6 +71,8 @@ import PackingMaterialRequestForm from './pages/WarehouseOperations/PackingMater
 import PackingMaterialQCForm from './pages/WarehouseOperations/PackingMaterials/QCForm';
 import PackingMaterialStockDetail from './pages/WarehouseOperations/PackingMaterials/StockDetail';
 import PackingMaterialPriceQualityHistory from './pages/WarehouseOperations/PackingMaterials/PriceQualityHistory';
+import PackingMaterialSupplierAllocation from './pages/WarehouseOperations/PackingMaterials/SupplierAllocation';
+import PackingMaterialDeliveryQC from './pages/WarehouseOperations/PackingMaterials/DeliveryQC';
 
 // Purchase Order Pages
 import PurchaseOrderList from './pages/WarehouseOperations/PurchaseOrders/List';
@@ -235,6 +241,9 @@ function App() {
                   <Route path="/warehouse/packing-materials/:id" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialStockDetail /></ProtectedRoute>} />
                   <Route path="/warehouse/packing-materials/:id/qc" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialQCForm /></ProtectedRoute>} />
                   <Route path="/warehouse/packing-materials/price-quality-history" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialPriceQualityHistory /></ProtectedRoute>} />
+                  <Route path="/warehouse/packing-materials/supplier-allocation" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialSupplierAllocation /></ProtectedRoute>} />
+                  <Route path="/warehouse/packing-materials/delivery-qc" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialDeliveryQC /></ProtectedRoute>} />
+                  <Route path="/warehouse/packing-materials/delivery-qc/:deliveryId" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialDeliveryQC /></ProtectedRoute>} />
                   
                   {/* Purchase Order Routes */}
                   <Route path="/warehouse/purchase-orders" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PurchaseOrderList /></ProtectedRoute>} />
@@ -264,6 +273,12 @@ function App() {
                   <Route path="/packing-materials/stock" element={<ProtectedRoute requiredRoles={['PackingMaterialsStoreManager', 'Admin']}><StockList /></ProtectedRoute>} />
                   <Route path="/packing-materials/send" element={<ProtectedRoute requiredRoles={['PackingMaterialsStoreManager', 'Admin']}><SendToPackingArea /></ProtectedRoute>} />
                   <Route path="/packing-materials/request" element={<ProtectedRoute requiredRoles={['PackingMaterialsStoreManager', 'Admin']}><RequestPurchase /></ProtectedRoute>} />
+                  <Route path="/packing-materials/requests/internal" element={<ProtectedRoute requiredRoles={['PackingMaterialsStoreManager', 'Admin']}><InternalRequestsList /></ProtectedRoute>} />
+                  <Route path="/packing-materials/requests/history" element={<ProtectedRoute requiredRoles={['PackingMaterialsStoreManager', 'Admin']}><PurchaseRequestHistory /></ProtectedRoute>} />
+                  <Route path="/packing-materials/dispatches" element={<ProtectedRoute requiredRoles={['PackingMaterialsStoreManager', 'Admin']}><DispatchHistory /></ProtectedRoute>} />
+                  
+                  {/* Packing Area Routes */}
+                  <Route path="/packing-area/request-materials" element={<ProtectedRoute requiredRoles={['PackingAreaManager', 'Admin']}><RequestMaterials /></ProtectedRoute>} />
                   <Route path="/reports" element={<ProtectedRoute requiredRoles={['Admin', 'ReadOnlyAdmin', 'MainDirector', 'HeadOfOperations']}><ReportsView /></ProtectedRoute>} />
                   <Route path="/reports/*" element={<ProtectedRoute requiredRoles={['Admin', 'ReadOnlyAdmin', 'MainDirector', 'HeadOfOperations']}><div className="p-6">Other reports coming soon...</div></ProtectedRoute>} />
                   

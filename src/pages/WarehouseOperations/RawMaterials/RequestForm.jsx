@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Package, Send, ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { requestService } from '../../../services/requestService';
 import { materialService } from '../../../services/materialService';
+import { auth } from '../../../firebase/auth';
 
 const RawMaterialRequestForm = () => {
   const navigate = useNavigate();
+  const [additionalNotes, setAdditionalNotes] = useState('');
   const [requestItems, setRequestItems] = useState([
     { id: 1, material: '', quantity: '', unit: 'kg', urgency: 'normal', reason: '' }
   ]);
@@ -54,9 +56,12 @@ const RawMaterialRequestForm = () => {
     setError('');
 
     try {
+      const currentUser = auth.currentUser;
       const requestData = {
         requestType: 'rawMaterial',
-        items: requestItems.map(item => ({
+        notes: additionalNotes,
+        requestedByName: currentUser?.displayName || currentUser?.email || 'Warehouse Staff',
+        items: requestItems.filter(item => item.material && item.quantity).map(item => ({
           materialId: availableMaterials.find(m => m.name === item.material)?.id,
           materialName: item.material,
           quantity: parseInt(item.quantity),
@@ -239,6 +244,8 @@ const RawMaterialRequestForm = () => {
             </label>
             <textarea
               rows={3}
+              value={additionalNotes}
+              onChange={(e) => setAdditionalNotes(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="Add any additional information for the Head of Operations..."
             />

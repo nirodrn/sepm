@@ -4,6 +4,7 @@ import { Archive, Send, ArrowLeft, Plus, Trash2 } from 'lucide-react';
 
 const PackingMaterialRequestForm = () => {
   const navigate = useNavigate();
+  const [additionalNotes, setAdditionalNotes] = useState('');
   const [requestItems, setRequestItems] = useState([
     { id: 1, material: '', quantity: '', unit: 'pieces', urgency: 'normal', reason: '' }
   ]);
@@ -49,13 +50,24 @@ const PackingMaterialRequestForm = () => {
     setError('');
 
     try {
-      // Submit request logic - will be sent to HO for approval
-      console.log('Submitting packing material request:', requestItems);
-      setTimeout(() => {
-        navigate('/warehouse/packing-materials');
-      }, 1000);
+      const requestData = {
+        requestType: 'packingMaterial',
+        notes: additionalNotes,
+        items: requestItems.map(item => ({
+          materialId: item.material, // This should be the actual ID
+          materialName: item.material,
+          quantity: parseInt(item.quantity),
+          unit: item.unit,
+          urgency: item.urgency,
+          reason: item.reason
+        }))
+      };
+      
+      await requestService.createMaterialRequest(requestData);
+      navigate('/warehouse/packing-materials');
     } catch (error) {
       setError(error.message);
+    } finally {
       setLoading(false);
     }
   };
@@ -224,6 +236,8 @@ const PackingMaterialRequestForm = () => {
             </label>
             <textarea
               rows={3}
+              value={additionalNotes}
+              onChange={(e) => setAdditionalNotes(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
               placeholder="Add any additional information for the Head of Operations..."
             />

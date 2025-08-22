@@ -2,22 +2,19 @@ import { getData, setData, updateData, pushData } from '../firebase/db';
 import { auth } from '../firebase/auth';
 
 export const requestService = {
-  // Material Requests
   async createMaterialRequest(requestData) {
     try {
+      const currentUser = auth.currentUser;
       const request = {
         ...requestData,
-        requestedBy: auth.currentUser?.uid,
         status: 'pending',
+        requestedBy: auth.currentUser?.uid,
+        requestedByName: currentUser?.displayName || currentUser?.email || 'Warehouse Staff',
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
       
       const id = await pushData('materialRequests', request);
-      
-      // Notify HO about new request
-      await this.notifyHeadOfOperations(id, request);
-      
       return { id, ...request };
     } catch (error) {
       throw new Error(`Failed to create material request: ${error.message}`);
@@ -41,14 +38,6 @@ export const requestService = {
       if (filters.requestedBy) {
         filteredRequests = filteredRequests.filter(req => req.requestedBy === filters.requestedBy);
       }
-      
-      if (filters.requestType) {
-        filteredRequests = filteredRequests.filter(req => req.requestType === filters.requestType);
-      }
-      
-      if (filters.dateFrom) {
-        filteredRequests = filteredRequests.filter(req => req.createdAt >= filters.dateFrom);
-      }
 
       return filteredRequests.sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
@@ -56,282 +45,332 @@ export const requestService = {
     }
   },
 
-  async approveRequest(requestId, approvalData) {
+  async createProductRequest(requestData) {
+    try {
+      const currentUser = auth.currentUser;
+      const request = {
+        ...requestData,
+        status: 'pending',
+        requestedBy: auth.currentUser?.uid,
+        requestedByName: currentUser?.displayName || currentUser?.email || 'Packing Area Manager',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      
+      const id = await pushData('productRequests', request);
+      return { id, ...request };
+    } catch (error) {
+      throw new Error(`Failed to create product request: ${error.message}`);
+    }
+  },
+
+  async getProductRequests(filters = {}) {
+    try {
+      const requests = await getData('productRequests');
+      if (!requests) return [];
+      
+      let filteredRequests = Object.entries(requests).map(([id, request]) => ({
+        id,
+        ...request
+      }));
+
+      if (filters.status) {
+        filteredRequests = filteredRequests.filter(req => req.status === filters.status);
+      }
+      
+      if (filters.requestedBy) {
+        filteredRequests = filteredRequests.filter(req => req.requestedBy === filters.requestedBy);
+      }
+
+      return filteredRequests.sort((a, b) => b.createdAt - a.createdAt);
+    } catch (error) {
+      throw new Error(`Failed to fetch product requests: ${error.message}`);
+    }
+  },
+
+  async getRequests(filters = {}) {
+    try {
+      const [materialRequests, productRequests] = await Promise.all([
+        this.getMaterialRequests(filters),
+        this.getProductRequests(filters)
+      ]);
+
+      // Add type identifier to each request
+      const allRequests = [
+        ...materialRequests.map(req => ({ ...req, type: 'material' })),
+        ...productRequests.map(req => ({ ...req, type: 'product' }))
+      ];
+
+      return allRequests.sort((a, b) => b.createdAt - a.createdAt);
+    } catch (error) {
+      throw new Error(`Failed to fetch all requests: ${error.message}`);
+    }
+  },
+
+  async approveRequest(requestId, approverData) {
     try {
       const updates = {
-        status: 'ho_approved',
-        approvedBy: auth.currentUser?.uid,
-        approvedAt: Date.now(),
-        approvalNotes: approvalData.notes || '',
+        status: 'approved_by_ho',
+        approvedBy: approverData?.approvedBy || auth.currentUser?.uid,
+        hoApprovedBy: approverData?.approvedBy || auth.currentUser?.uid,
+        hoApprovedAt: Date.now(),
+        hoApprovalComments: approverData?.comments || '',
         updatedAt: Date.now()
       };
       
       await updateData(`materialRequests/${requestId}`, updates);
-      
-      // Notify requester about approval
-      await this.notifyRequestStatus(requestId, 'approved');
-      
       return updates;
     } catch (error) {
-      throw new Error(`Failed to approve request: ${error.message}`);
+      throw new Error(`Failed to HO approve material request: ${error.message}`);
+    }
+  },
+
+  async forwardToMD(requestId, forwardData) {
+    try {
+      // First check if HO has approved this request
+      const request = await getData(`materialRequests/${requestId}`);
+      if (!request || request.status !== 'approved_by_ho') {
+        throw new Error('Request must be approved by HO before forwarding to MD');
+      }
+      
+      const updates = {
+        status: 'forwarded_to_md',
+        forwardedToMD: true,
+        forwardedBy: auth.currentUser?.uid,
+        forwardedAt: Date.now(),
+        forwardComments: forwardData?.comments || '',
+        updatedAt: Date.now()
+      };
+      
+      await updateData(`materialRequests/${requestId}`, updates);
+      return updates;
+    } catch (error) {
+      throw new Error(`Failed to forward request to MD: ${error.message}`);
     }
   },
 
   async mdApproveRequest(requestId, approvalData) {
     try {
+      // Check if request was forwarded by HO
+      const request = await getData(`materialRequests/${requestId}`);
+      if (!request || request.status !== 'forwarded_to_md') {
+        throw new Error('Only requests forwarded by HO can be approved by MD');
+      }
+      
       const updates = {
         status: 'md_approved',
         mdApprovedBy: auth.currentUser?.uid,
         mdApprovedAt: Date.now(),
-        mdApprovalNotes: approvalData.notes || '',
+        mdApprovalComments: approvalData?.comments || '',
+        finalApproval: true,
         updatedAt: Date.now()
       };
       
       await updateData(`materialRequests/${requestId}`, updates);
-      
-      // Notify warehouse staff that they can create PO
-      await this.notifyRequestStatus(requestId, 'md_approved');
-      
       return updates;
     } catch (error) {
-      throw new Error(`Failed to MD approve request: ${error.message}`);
+      throw new Error(`Failed to MD approve material request: ${error.message}`);
     }
   },
 
-  async rejectRequest(requestId, rejectionData) {
+  async approveProductRequest(requestId, approverData) {
     try {
       const updates = {
-        status: 'rejected',
-        rejectedBy: auth.currentUser?.uid,
-        rejectedAt: Date.now(),
-        rejectionReason: rejectionData.reason || '',
-        updatedAt: Date.now()
-      };
-      
-      await updateData(`materialRequests/${requestId}`, updates);
-      
-      // Notify requester about rejection
-      await this.notifyRequestStatus(requestId, 'rejected');
-      
-      return updates;
-    } catch (error) {
-      throw new Error(`Failed to reject request: ${error.message}`);
-    }
-  },
-
-  // Product Requests (DR/Distributor)
-  async createProductRequest(requestData) {
-    try {
-      const request = {
-        ...requestData,
-        requestedBy: auth.currentUser?.uid,
-        status: 'pending',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-      
-      const id = await pushData('productRequests', request);
-      
-      // Notify HO about new product request
-      await this.notifyHeadOfOperations(id, request, 'product');
-      
-      return { id, ...request };
-    } catch (error) {
-      throw new Error(`Failed to create product request: ${error.message}`);
-    }
-  },
-
-  async getProductRequests(filters = {}) {
-    try {
-      const requests = await getData('productRequests');
-      if (!requests) return [];
-      
-      let filteredRequests = Object.entries(requests).map(([id, request]) => ({
-        id,
-        ...request
-      }));
-
-      if (filters.status) {
-        filteredRequests = filteredRequests.filter(req => req.status === filters.status);
-      }
-      
-      if (filters.requestType) {
-        filteredRequests = filteredRequests.filter(req => req.requestType === filters.requestType);
-      }
-
-      return filteredRequests.sort((a, b) => b.createdAt - a.createdAt);
-    } catch (error) {
-      throw new Error(`Failed to fetch product requests: ${error.message}`);
-    }
-  },
-
-  // Product Requests (DR/Distributor)
-  async createProductRequest(requestData) {
-    try {
-      const request = {
-        ...requestData,
-        requestedBy: auth.currentUser?.uid,
-        status: 'pending',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-      
-      const id = await pushData('productRequests', request);
-      
-      // Notify HO about new product request
-      await this.notifyHeadOfOperations(id, request, 'product');
-      
-      return { id, ...request };
-    } catch (error) {
-      throw new Error(`Failed to create product request: ${error.message}`);
-    }
-  },
-
-  async getProductRequests(filters = {}) {
-    try {
-      const requests = await getData('productRequests');
-      if (!requests) return [];
-      
-      let filteredRequests = Object.entries(requests).map(([id, request]) => ({
-        id,
-        ...request
-      }));
-
-      if (filters.status) {
-        filteredRequests = filteredRequests.filter(req => req.status === filters.status);
-      }
-      
-      if (filters.requestType) {
-        filteredRequests = filteredRequests.filter(req => req.requestType === filters.requestType);
-      }
-
-      return filteredRequests.sort((a, b) => b.createdAt - a.createdAt);
-    } catch (error) {
-      throw new Error(`Failed to fetch product requests: ${error.message}`);
-    }
-  },
-
-  async approveProductRequest(requestId, approvalData) {
-    try {
-      const updates = {
-        status: 'ho_approved',
-        approvedBy: auth.currentUser?.uid,
+        status: 'approved_by_ho',
         approvedAt: Date.now(),
-        approvalNotes: approvalData.notes || '',
+        approverComments: approverData?.comments || '',
         updatedAt: Date.now()
       };
       
-      await updateData(`productRequests/${requestId}`, updates);
-      
-      // Notify requester about approval
-      await this.notifyRequestStatus(requestId, 'approved', 'product');
-      
+      await updateData(`materialRequests/${requestId}`, updates);
       return updates;
     } catch (error) {
-      throw new Error(`Failed to approve product request: ${error.message}`);
+      throw new Error(`Failed to approve material request: ${error.message}`);
     }
   },
 
-  async rejectProductRequest(requestId, rejectionData) {
+  async rejectRequest(requestId, rejectorData) {
     try {
       const updates = {
         status: 'rejected',
-        rejectedBy: auth.currentUser?.uid,
+        rejectedBy: rejectorData?.rejectedBy || auth.currentUser?.uid,
         rejectedAt: Date.now(),
-        rejectionReason: rejectionData.reason || '',
+        rejectionReason: rejectorData?.reason || '',
+        updatedAt: Date.now()
+      };
+      
+      await updateData(`materialRequests/${requestId}`, updates);
+      return updates;
+    } catch (error) {
+      throw new Error(`Failed to reject material request: ${error.message}`);
+    }
+  },
+
+  async approveProductRequest(requestId, approverData) {
+    try {
+      const updates = {
+        status: 'approved',
+        approvedBy: approverData?.approvedBy || auth.currentUser?.uid,
+        hoApprovedBy: approverData?.approvedBy || auth.currentUser?.uid,
+        hoApprovedAt: Date.now(),
+        hoApprovalComments: approverData?.comments || '',
         updatedAt: Date.now()
       };
       
       await updateData(`productRequests/${requestId}`, updates);
+      return updates;
+    } catch (error) {
+      throw new Error(`Failed to HO approve product request: ${error.message}`);
+    }
+  },
+
+  async forwardProductToMD(requestId, forwardData) {
+    try {
+      // First check if HO has approved this request
+      const request = await getData(`productRequests/${requestId}`);
+      if (!request || request.status !== 'approved_by_ho') {
+        throw new Error('Request must be approved by HO before forwarding to MD');
+      }
       
-      // Notify requester about rejection
-      await this.notifyRequestStatus(requestId, 'rejected', 'product');
+      const updates = {
+        status: 'forwarded_to_md',
+        forwardedToMD: true,
+        forwardedBy: auth.currentUser?.uid,
+        forwardedAt: Date.now(),
+        forwardComments: forwardData?.comments || '',
+        updatedAt: Date.now()
+      };
       
+      await updateData(`productRequests/${requestId}`, updates);
+      return updates;
+    } catch (error) {
+      throw new Error(`Failed to forward product request to MD: ${error.message}`);
+    }
+  },
+
+  async mdApproveProductRequest(requestId, approvalData) {
+    try {
+      // Check if request was forwarded by HO
+      const request = await getData(`productRequests/${requestId}`);
+      if (!request || request.status !== 'forwarded_to_md') {
+        throw new Error('Only requests forwarded by HO can be approved by MD');
+      }
+      
+      const updates = {
+        status: 'md_approved',
+        mdApprovedBy: auth.currentUser?.uid,
+        mdApprovedAt: Date.now(),
+        mdApprovalComments: approvalData?.comments || '',
+        finalApproval: true,
+        updatedAt: Date.now()
+      };
+      
+      await updateData(`productRequests/${requestId}`, updates);
+      return updates;
+    } catch (error) {
+      throw new Error(`Failed to MD approve product request: ${error.message}`);
+    }
+  },
+
+  async rejectProductRequest(requestId, rejectorData) {
+    try {
+      const updates = {
+        status: 'rejected',
+        rejectedBy: rejectorData?.rejectedBy || auth.currentUser?.uid,
+        rejectedAt: Date.now(),
+        rejectionReason: rejectorData?.reason || '',
+        updatedAt: Date.now()
+      };
+      
+      await updateData(`productRequests/${requestId}`, updates);
       return updates;
     } catch (error) {
       throw new Error(`Failed to reject product request: ${error.message}`);
     }
   },
 
-  // Supplier Allocation
-  async createSupplierAllocation(allocationData) {
+  async getRequestById(requestId) {
     try {
-      const allocation = {
-        ...allocationData,
-        createdBy: auth.currentUser?.uid,
-        createdAt: Date.now(),
-        status: 'allocated'
-      };
-      
-      const id = await pushData('supplierAllocations', allocation);
-      
-      // Update request status
-      await updateData(`materialRequests/${allocationData.requestId}`, {
-        status: 'allocated',
-        allocationId: id,
-        updatedAt: Date.now()
-      });
-      
-      return { id, ...allocation };
-    } catch (error) {
-      throw new Error(`Failed to create supplier allocation: ${error.message}`);
-    }
-  },
-
-  async getSupplierAllocations(filters = {}) {
-    try {
-      const allocations = await getData('supplierAllocations');
-      if (!allocations) return [];
-      
-      let filteredAllocations = Object.entries(allocations).map(([id, allocation]) => ({
-        id,
-        ...allocation
-      }));
-
-      if (filters.requestId) {
-        filteredAllocations = filteredAllocations.filter(alloc => alloc.requestId === filters.requestId);
+      const materialRequest = await getData(`materialRequests/${requestId}`);
+      if (materialRequest) {
+        return {
+          id: requestId,
+          type: 'material',
+          ...materialRequest
+        };
       }
 
-      return filteredAllocations.sort((a, b) => b.createdAt - a.createdAt);
+      const productRequest = await getData(`productRequests/${requestId}`);
+      if (productRequest) {
+        return {
+          id: requestId,
+          type: 'product',
+          ...productRequest
+        };
+      }
+
+      return null;
     } catch (error) {
-      throw new Error(`Failed to fetch supplier allocations: ${error.message}`);
+      throw new Error(`Failed to fetch request by ID: ${error.message}`);
     }
   },
 
-  // Notifications
-  async notifyHeadOfOperations(requestId, requestData, type = 'material') {
+  async updateRequestStatus(requestId, status, updateData = {}) {
     try {
-      const notification = {
-        type: `${type}_request`,
-        requestId,
-        message: `New ${type} request from ${requestData.requestedBy}`,
-        status: 'unread',
-        createdAt: Date.now()
-      };
+      const materialRequest = await getData(`materialRequests/${requestId}`);
+      if (materialRequest) {
+        await updateData(`materialRequests/${requestId}`, {
+          status,
+          ...updateData,
+          updatedAt: Date.now()
+        });
+        return true;
+      }
       
-      await pushData('notifications/ho', notification);
+      const productRequest = await getData(`productRequests/${requestId}`);
+      if (productRequest) {
+        await updateData(`productRequests/${requestId}`, {
+          status,
+          ...updateData,
+          updatedAt: Date.now()
+        });
+        return true;
+      }
+      
+      throw new Error('Request not found');
     } catch (error) {
-      console.error('Failed to notify HO:', error);
+      throw new Error(`Failed to update request status: ${error.message}`);
     }
   },
 
-  async notifyRequestStatus(requestId, status, type = 'material') {
+  async getPendingRequestsCount() {
     try {
-      const requestPath = type === 'material' ? 'materialRequests' : 'productRequests';
-      const request = await getData(`${requestPath}/${requestId}`);
-      if (!request) return;
+      const [materialRequests, productRequests] = await Promise.all([
+        this.getMaterialRequests({ status: 'pending' }),
+        this.getProductRequests({ status: 'pending' })
+      ]);
       
-      const notification = {
-        type: 'request_status',
-        requestId,
-        message: `Your ${type} request has been ${status}`,
-        status: 'unread',
-        createdAt: Date.now()
+      return materialRequests.length + productRequests.length;
+    } catch (error) {
+      throw new Error(`Failed to get pending requests count: ${error.message}`);
+    }
+  },
+
+  // MD Approval methods
+  async mdApproveRequest(requestId, approvalData) {
+    try {
+      const updates = {
+        status: 'md_approved',
+        mdApprovedBy: auth.currentUser?.uid,
+        mdApprovedAt: Date.now(),
+        mdApprovalNotes: approvalData?.notes || '',
+        updatedAt: Date.now()
       };
       
-      await pushData(`notifications/${request.requestedBy}`, notification);
+      await updateData(`productRequests/${requestId}`, updates);
+      return updates;
     } catch (error) {
-      console.error(`Failed to notify ${type} request status:`, error);
+      throw new Error(`Failed to MD approve product request: ${error.message}`);
     }
   }
 };

@@ -1,86 +1,99 @@
-import React, { useState } from 'react';
-import { Archive, Search, Filter, Edit, Plus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Archive, Search, Filter, Edit, Plus, AlertTriangle, TrendingUp, Eye, Package } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { packingMaterialsService } from '../../services/packingMaterialsService';
+import LoadingSpinner from '../../components/Common/LoadingSpinner';
+import ErrorMessage from '../../components/Common/ErrorMessage';
 
 const StockList = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [stockData, setStockData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const inventory = [
-    { 
-      id: 1, 
-      material: 'Cardboard Boxes - Small', 
-      stock: 450, 
-      reorderLevel: 100, 
-      location: 'A1-B2', 
-      supplier: 'ABC Packaging',
-      lastUpdated: '2025-01-15'
-    },
-    { 
-      id: 2, 
-      material: 'Cardboard Boxes - Medium', 
-      stock: 320, 
-      reorderLevel: 80, 
-      location: 'A1-B3', 
-      supplier: 'ABC Packaging',
-      lastUpdated: '2025-01-15'
-    },
-    { 
-      id: 3, 
-      material: 'Cardboard Boxes - Large', 
-      stock: 180, 
-      reorderLevel: 50, 
-      location: 'A1-B4', 
-      supplier: 'ABC Packaging',
-      lastUpdated: '2025-01-14'
-    },
-    { 
-      id: 4, 
-      material: 'Bubble Wrap Rolls', 
-      stock: 25, 
-      reorderLevel: 30, 
-      location: 'B2-C1', 
-      supplier: 'Protective Materials Ltd',
-      lastUpdated: '2025-01-13'
-    },
-    { 
-      id: 5, 
-      material: 'Packing Tape', 
-      stock: 89, 
-      reorderLevel: 25, 
-      location: 'B2-C2', 
-      supplier: 'Adhesive Solutions',
-      lastUpdated: '2025-01-15'
-    },
-    { 
-      id: 6, 
-      material: 'Labels - Product', 
-      stock: 1200, 
-      reorderLevel: 200, 
-      location: 'C1-A1', 
-      supplier: 'Label Pro',
-      lastUpdated: '2025-01-14'
-    }
-  ];
+  useEffect(() => {
+    loadStockData();
+  }, []);
 
-  const getStatusInfo = (stock, reorderLevel) => {
-    if (stock <= reorderLevel) {
-      return { status: 'Low', color: 'bg-red-100 text-red-800' };
-    } else if (stock <= reorderLevel * 2) {
-      return { status: 'Medium', color: 'bg-yellow-100 text-yellow-800' };
-    } else {
-      return { status: 'Good', color: 'bg-green-100 text-green-800' };
+  const loadStockData = async () => {
+    try {
+      setLoading(true);
+      const stockReport = await packingMaterialsService.getStockReport();
+      setStockData(stockReport);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const filteredInventory = inventory.filter(item => {
-    const matchesSearch = item.material.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const handleUpdateStock = async (materialId, newQuantity) => {
+    try {
+      await packingMaterialsService.updateStock(materialId, newQuantity);
+      await loadStockData();
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const getStatusInfo = (status) => {
+    switch (status) {
+      case 'low':
+        return { color: 'bg-red-100 text-red-800', icon: AlertTriangle };
+      case 'medium':
+        return { color: 'bg-yellow-100 text-yellow-800', icon: AlertTriangle };
+      case 'good':
+        return { color: 'bg-green-100 text-green-800', icon: Package };
+      default:
+        return { color: 'bg-gray-100 text-gray-800', icon: Package };
+    }
+  };
+
+  const getQualityColor = (grade) => {
+    switch (grade) {
+      case 'A':
+        return 'bg-green-100 text-green-800';
+      case 'B':
+        return 'bg-blue-100 text-blue-800';
+      case 'C':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'D':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const categories = [...new Set(stockData.map(item => item.category))];
+
+  const filteredInventory = stockData.filter(item => {
+    const matchesSearch = item.materialName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         item.materialCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.location.toLowerCase().includes(searchTerm.toLowerCase());
     
-    if (!filterStatus) return matchesSearch;
+    const matchesStatus = !filterStatus || item.status === filterStatus;
+    const matchesCategory = !filterCategory || item.category === filterCategory;
     
-    const statusInfo = getStatusInfo(item.stock, item.reorderLevel);
-    return matchesSearch && statusInfo.status === filterStatus;
+    return matchesSearch && matchesStatus && matchesCategory;
   });
+
+  const stockSummary = {
+    totalItems: filteredInventory.length,
+    totalValue: filteredInventory.reduce((sum, item) => sum + item.totalValue, 0),
+    lowStockItems: filteredInventory.filter(item => item.status === 'low').length,
+    criticalItems: filteredInventory.filter(item => item.currentStock === 0).length
+  };
+
+  if (loading) {
+    return <LoadingSpinner text="Loading stock data..." />;
+  }
+
+  if (error) {
+    return <ErrorMessage message={error} onRetry={loadStockData} />;
+  }
 
   return (
     <div className="p-6">
@@ -89,14 +102,70 @@ const StockList = () => {
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center">
               <Archive className="h-8 w-8 mr-3 text-blue-600" />
-              Stock List
+              Packing Materials Stock
             </h1>
             <p className="text-gray-600 mt-2">Manage packing materials inventory</p>
           </div>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
-            <Plus className="h-4 w-4" />
-            <span>Add Material</span>
-          </button>
+          <div className="flex items-center space-x-3">
+            <button 
+              onClick={() => navigate('/packing-materials/requests/internal')}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+            >
+              <Package className="h-4 w-4" />
+              <span>Internal Requests</span>
+            </button>
+            <button 
+              onClick={() => navigate('/packing-materials/receive')}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Receive Stock</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Items</p>
+              <p className="text-2xl font-bold text-gray-900">{stockSummary.totalItems}</p>
+            </div>
+            <Archive className="h-8 w-8 text-gray-600" />
+          </div>
+        </div>
+        <div className="bg-red-50 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-red-600">Low Stock</p>
+              <p className="text-2xl font-bold text-red-900">{stockSummary.lowStockItems}</p>
+            </div>
+            <AlertTriangle className="h-8 w-8 text-red-600" />
+          </div>
+        </div>
+        <div className="bg-orange-50 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-orange-600">Out of Stock</p>
+              <p className="text-2xl font-bold text-orange-900">{stockSummary.criticalItems}</p>
+            </div>
+            <div className="h-8 w-8 bg-orange-600 rounded-full flex items-center justify-center">
+              <span className="text-white text-sm font-bold">!</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-green-50 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-green-600">Total Value</p>
+              <p className="text-2xl font-bold text-green-900">${stockSummary.totalValue.toLocaleString()}</p>
+            </div>
+            <div className="h-8 w-8 bg-green-600 rounded-full flex items-center justify-center">
+              <span className="text-white text-sm font-bold">$</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -116,14 +185,26 @@ const StockList = () => {
             <div className="relative">
               <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
                 className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
+                <option value="">All Categories</option>
+                {categories.map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
+            <div className="relative">
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
                 <option value="">All Status</option>
-                <option value="Good">Good</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
+                <option value="good">Good</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
               </select>
             </div>
           </div>
@@ -149,7 +230,13 @@ const StockList = () => {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Supplier
+                  Quality Grade
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total Value
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Last Updated
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -158,39 +245,80 @@ const StockList = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredInventory.map((item) => {
-                const statusInfo = getStatusInfo(item.stock, item.reorderLevel);
+                const statusInfo = getStatusInfo(item.status);
                 return (
-                  <tr key={item.id} className="hover:bg-gray-50">
+                  <tr key={item.materialId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{item.material}</div>
-                        <div className="text-sm text-gray-500">Last updated: {item.lastUpdated}</div>
+                        <div className="text-sm font-medium text-gray-900">{item.materialName}</div>
+                        <div className="text-sm text-gray-500">
+                          Code: {item.materialCode} • {item.category}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-gray-900">{item.currentStock} {item.unit}</span>
+                        <button
+                          onClick={() => {
+                            const newQty = prompt(`Update stock for ${item.materialName}:`, item.currentStock);
+                            if (newQty !== null && !isNaN(newQty)) {
+                              handleUpdateStock(item.materialId, parseInt(newQty));
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800 text-xs"
+                          title="Update Stock"
+                        >
+                          <Edit className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <div className="w-16 bg-gray-200 rounded-full h-1 mt-1">
+                        <div 
+                          className="bg-blue-500 h-1 rounded-full" 
+                          style={{width: `${Math.min((item.currentStock / item.maxLevel) * 100, 100)}%`}}
+                        ></div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.stock}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.reorderLevel}
+                      {item.reorderLevel} {item.unit}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {item.location}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusInfo.color}`}>
-                        {statusInfo.status}
+                      <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${statusInfo.color}`}>
+                        <statusInfo.icon className="h-3 w-3 mr-1" />
+                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getQualityColor(item.qualityGrade)}`}>
+                        {item.qualityGrade !== 'N/A' ? `Grade ${item.qualityGrade}` : 'N/A'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.supplier}
+                      ${item.totalValue.toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.lastUpdated ? new Date(item.lastUpdated).toLocaleDateString() : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        className="text-blue-600 hover:text-blue-900 p-1 rounded"
-                        title="Edit Material"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => navigate(`/packing-materials/stock/${item.materialId}`)}
+                          className="text-blue-600 hover:text-blue-900 p-1 rounded"
+                          title="View Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => navigate(`/packing-materials/stock/${item.materialId}/movements`)}
+                          className="text-green-600 hover:text-green-900 p-1 rounded"
+                          title="View Movements"
+                        >
+                          <TrendingUp className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -202,9 +330,9 @@ const StockList = () => {
         {filteredInventory.length === 0 && (
           <div className="text-center py-12">
             <Archive className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No materials found</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">No stock found</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {searchTerm || filterStatus ? 'Try adjusting your search criteria.' : 'Get started by adding materials.'}
+              {searchTerm || filterStatus || filterCategory ? 'Try adjusting your search criteria.' : 'Stock will appear here after receiving materials.'}
             </p>
           </div>
         )}
