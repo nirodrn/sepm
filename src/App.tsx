@@ -262,7 +262,7 @@ function App() {
                   
                   {/* Head of Operations Routes */}
                   <Route path="/approvals" element={<ProtectedRoute requiredRoles={['HeadOfOperations', 'MainDirector']}><ApprovalQueue /></ProtectedRoute>} />
-                  <Route path="/approvals/history" element={<ProtectedRoute requiredRoles={['HeadOfOperations', 'MainDirector']}><RequestHistory /></ProtectedRoute>} />
+                  <Route path="/approvals/history" element={<ProtectedRoute requiredRoles={['HeadOfOperations', 'MainDirector', 'WarehouseStaff', 'PackingMaterialsStoreManager']}><RequestHistory /></ProtectedRoute>} />
                   <Route path="/approvals/supplier-monitoring" element={<ProtectedRoute requiredRoles={['HeadOfOperations', 'MainDirector']}><SupplierMonitoring /></ProtectedRoute>} />
                   
                   {/* Packing Area Routes */}

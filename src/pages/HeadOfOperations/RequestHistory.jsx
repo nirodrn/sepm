@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Search, Filter, FileText, Package, ShoppingCart, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Clock, Search, Filter, FileText, Package, ShoppingCart, CheckCircle, XCircle, AlertCircle, Eye } from 'lucide-react';
+import { auth } from '../../firebase/auth';
 import { requestService } from '../../services/requestService';
 import { packingMaterialsService } from '../../services/packingMaterialsService';
+import { subscribeToData } from '../../firebase/db';
 import { formatDate } from '../../utils/formatDate';
+import { useRole } from '../../hooks/useRole';
+import LoadingSpinner from '../../components/Common/LoadingSpinner';
 
 const RequestHistory = () => {
+  const { userRole, hasRole } = useRole();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -14,30 +19,58 @@ const RequestHistory = () => {
 
   useEffect(() => {
     loadRequestHistory();
-  }, []);
+    
+    // Set up real-time listeners
+    const unsubscribeMaterial = subscribeToData('materialRequests', () => {
+      loadRequestHistory();
+    });
+    
+    const unsubscribePacking = subscribeToData('packingMaterialRequests', () => {
+      loadRequestHistory();
+    });
+
+    return () => {
+      unsubscribeMaterial();
+      unsubscribePacking();
+    };
+  }, [userRole]);
 
   const loadRequestHistory = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [materialRequests, productRequests, packingMaterialRequests] = await Promise.all([
+      const [materialRequests, packingMaterialRequests] = await Promise.all([
         requestService.getMaterialRequests(),
-        requestService.getProductRequests(),
         packingMaterialsService.getPurchaseRequests().catch(() => [])
       ]);
 
       // Combine all requests with type identification
-      const allRequests = [
+      let allRequests = [
         ...materialRequests.map(req => ({ ...req, type: 'material' })),
-        ...productRequests.map(req => ({ ...req, type: 'product' })),
         ...packingMaterialRequests.map(req => ({ ...req, type: 'packing_material' }))
       ];
 
+      // Filter based on user role
+      const currentUserId = auth.currentUser?.uid;
+      
+      if (hasRole('WarehouseStaff')) {
+        // Warehouse staff only see their own material requests
+        allRequests = allRequests.filter(req => 
+          req.type === 'material' && req.requestedBy === currentUserId
+        );
+      } else if (hasRole('PackingMaterialsStoreManager')) {
+        // Packing store manager only see their own packing material requests
+        allRequests = allRequests.filter(req => 
+          req.type === 'packing_material' && req.requestedBy === currentUserId
+        );
+      }
+      // HO and MD see all requests (no filtering needed)
+
       // Sort by date (newest first)
       allRequests.sort((a, b) => {
-        const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-        const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+        const aDate = new Date(a.createdAt);
+        const bDate = new Date(b.createdAt);
         return bDate - aDate;
       });
 
@@ -52,12 +85,15 @@ const RequestHistory = () => {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'approved':
+      case 'md_approved':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'rejected':
+      case 'ho_rejected':
+      case 'md_rejected':
         return <XCircle className="w-5 h-5 text-red-500" />;
-      case 'pending':
-        return <AlertCircle className="w-5 h-5 text-yellow-500" />;
+      case 'forwarded_to_md':
+        return <AlertCircle className="w-5 h-5 text-blue-500" />;
+      case 'pending_ho':
+        return <Clock className="w-5 h-5 text-yellow-500" />;
       default:
         return <Clock className="w-5 h-5 text-gray-500" />;
     }
@@ -67,8 +103,6 @@ const RequestHistory = () => {
     switch (type) {
       case 'material':
         return <Package className="w-5 h-5 text-blue-500" />;
-      case 'product':
-        return <FileText className="w-5 h-5 text-green-500" />;
       case 'packing_material':
         return <ShoppingCart className="w-5 h-5 text-purple-500" />;
       default:
@@ -80,8 +114,6 @@ const RequestHistory = () => {
     switch (type) {
       case 'material':
         return 'Material Request';
-      case 'product':
-        return 'Product Request';
       case 'packing_material':
         return 'Packing Material Purchase';
       default:
@@ -89,12 +121,45 @@ const RequestHistory = () => {
     }
   };
 
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'pending_ho':
+        return 'Pending HO Approval';
+      case 'forwarded_to_md':
+        return 'Forwarded to MD';
+      case 'md_approved':
+        return 'MD Approved';
+      case 'ho_rejected':
+        return 'HO Rejected';
+      case 'md_rejected':
+        return 'MD Rejected';
+      default:
+        return status?.replace('_', ' ').toUpperCase() || 'Unknown';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'md_approved':
+        return 'bg-green-100 text-green-800';
+      case 'ho_rejected':
+      case 'md_rejected':
+        return 'bg-red-100 text-red-800';
+      case 'forwarded_to_md':
+        return 'bg-blue-100 text-blue-800';
+      case 'pending_ho':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   const filteredRequests = requests.filter(request => {
     const matchesSearch = 
-      request.materialName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.items?.some(item => item.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      request.requestedBy?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      request.items?.some(item => 
+        item.materialName?.toLowerCase().includes(searchTerm.toLowerCase())
+      ) ||
+      request.requestedByName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       request.id?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
@@ -103,16 +168,22 @@ const RequestHistory = () => {
     return matchesSearch && matchesStatus && matchesType;
   });
 
+  const getPageTitle = () => {
+    if (hasRole(['HeadOfOperations', 'MainDirector'])) {
+      return 'Request History';
+    }
+    return 'My Request History';
+  };
+
+  const getPageDescription = () => {
+    if (hasRole(['HeadOfOperations', 'MainDirector'])) {
+      return 'View and track all material and packing material requests';
+    }
+    return 'View and track your submitted requests and their approval status';
+  };
+
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner text="Loading request history..." />;
   }
 
   return (
@@ -120,8 +191,12 @@ const RequestHistory = () => {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Request History</h1>
-          <p className="text-gray-600">View and track all material, product, and packing material requests</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            {getPageTitle()}
+          </h1>
+          <p className="text-gray-600">
+            {getPageDescription()}
+          </p>
         </div>
 
         {/* Error Message */}
@@ -158,9 +233,11 @@ const RequestHistory = () => {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
               >
                 <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
+                <option value="pending_ho">Pending HO</option>
+                <option value="forwarded_to_md">Forwarded to MD</option>
+                <option value="md_approved">MD Approved</option>
+                <option value="ho_rejected">HO Rejected</option>
+                <option value="md_rejected">MD Rejected</option>
               </select>
             </div>
 
@@ -174,7 +251,6 @@ const RequestHistory = () => {
               >
                 <option value="all">All Types</option>
                 <option value="material">Material Requests</option>
-                <option value="product">Product Requests</option>
                 <option value="packing_material">Packing Material</option>
               </select>
             </div>
@@ -197,7 +273,7 @@ const RequestHistory = () => {
             </h3>
             <p className="text-gray-500">
               {requests.length === 0 
-                ? 'Data currently not available. No requests have been submitted yet.'
+                ? 'No requests have been submitted yet.'
                 : 'Try adjusting your search criteria or filters.'
               }
             </p>
@@ -214,67 +290,41 @@ const RequestHistory = () => {
                         <h3 className="text-lg font-semibold text-gray-900">
                           {getTypeLabel(request.type)}
                         </h3>
-                        <span className="text-sm text-gray-500">#{request.id}</span>
+                        <span className="text-sm text-gray-500">#{request.id.slice(-8)}</span>
                       </div>
                       
                       {/* Request Details */}
                       <div className="space-y-2">
-                        {request.type === 'material' && (
+                        {request.items && request.items.length > 0 && (
                           <div>
                             <p className="text-gray-700">
-                              <span className="font-medium">Material:</span> {request.materialName}
+                              <span className="font-medium">Items:</span> {request.items.length} item(s)
                             </p>
-                            <p className="text-gray-700">
-                              <span className="font-medium">Quantity:</span> {request.quantity} {request.unit}
-                            </p>
-                          </div>
-                        )}
-                        
-                        {request.type === 'product' && (
-                          <div>
-                            <p className="text-gray-700">
-                              <span className="font-medium">Product:</span> {request.productName}
-                            </p>
-                            <p className="text-gray-700">
-                              <span className="font-medium">Quantity:</span> {request.quantity}
-                            </p>
-                          </div>
-                        )}
-                        
-                        {request.type === 'packing_material' && (
-                          <div>
-                            <p className="text-gray-700">
-                              <span className="font-medium">Items:</span> {request.items?.length || 0} items
-                            </p>
-                            <p className="text-gray-700">
-                              <span className="font-medium">Budget:</span> ${request.estimatedBudget}
-                            </p>
+                            <div className="ml-4 space-y-1">
+                              {request.items.slice(0, 3).map((item, index) => (
+                                <p key={index} className="text-sm text-gray-600">
+                                  • {item.materialName}: {item.quantity} {item.unit}
+                                </p>
+                              ))}
+                              {request.items.length > 3 && (
+                                <p className="text-sm text-gray-500">
+                                  ... and {request.items.length - 3} more items
+                                </p>
+                              )}
+                            </div>
                           </div>
                         )}
                         
                         <p className="text-gray-700">
-                          <span className="font-medium">Requested by:</span> {request.requestedBy}
+                          <span className="font-medium">Requested by:</span> {request.requestedByName}
                         </p>
                         <p className="text-gray-700">
                           <span className="font-medium">Date:</span> {formatDate(request.createdAt)}
                         </p>
                         
-                        {request.urgency && (
+                        {request.budgetEstimate && (
                           <p className="text-gray-700">
-                            <span className="font-medium">Urgency:</span> 
-                            <span className={`ml-1 px-2 py-1 rounded-full text-xs font-medium ${
-                              request.urgency === 'high' ? 'bg-red-100 text-red-800' :
-                              request.urgency === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-green-100 text-green-800'
-                            }`}>
-                              {request.urgency}
-                            </span>
-                          </p>
-                        )}
-                        
-                        {request.reason && (
-                          <p className="text-gray-700">
-                            <span className="font-medium">Reason:</span> {request.reason}
+                            <span className="font-medium">Budget:</span> ${request.budgetEstimate.toFixed(2)}
                           </p>
                         )}
                         
@@ -283,36 +333,82 @@ const RequestHistory = () => {
                             <span className="font-medium">Justification:</span> {request.justification}
                           </p>
                         )}
+
+                        {/* Workflow Timeline */}
+                        <div className="mt-4 space-y-2">
+                          {request.workflow?.submitted && (
+                            <div className="flex items-center text-sm text-gray-600">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                              <span>Submitted: {formatDate(request.workflow.submitted.at)}</span>
+                            </div>
+                          )}
+                          {request.workflow?.hoApproved && (
+                            <div className="flex items-center text-sm text-green-600">
+                              <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                              <span>HO Approved: {formatDate(request.workflow.hoApproved.at)}</span>
+                            </div>
+                          )}
+                          {request.workflow?.forwardedToMD && (
+                            <div className="flex items-center text-sm text-blue-600">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                              <span>Forwarded to MD: {formatDate(request.workflow.forwardedToMD.at)}</span>
+                            </div>
+                          )}
+                          {request.workflow?.mdApproved && (
+                            <div className="flex items-center text-sm text-green-600">
+                              <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                              <span>MD Approved: {formatDate(request.workflow.mdApproved.at)}</span>
+                            </div>
+                          )}
+                          {request.workflow?.hoRejected && (
+                            <div className="flex items-center text-sm text-red-600">
+                              <div className="w-2 h-2 bg-red-500 rounded-full mr-2"></div>
+                              <span>HO Rejected: {formatDate(request.workflow.hoRejected.at)}</span>
+                            </div>
+                          )}
+                          {request.workflow?.mdRejected && (
+                            <div className="flex items-center text-sm text-red-600">
+                              <div className="w-2 h-2 bg-red-500 rounded-full mr-2"></div>
+                              <span>MD Rejected: {formatDate(request.workflow.mdRejected.at)}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
                   
                   <div className="flex items-center space-x-2">
                     {getStatusIcon(request.status)}
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      request.status === 'approved' ? 'bg-green-100 text-green-800' :
-                      request.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                      request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {request.status}
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(request.status)}`}>
+                      {getStatusLabel(request.status)}
                     </span>
                   </div>
                 </div>
                 
-                {/* Approval/Rejection Details */}
-                {(request.status === 'approved' || request.status === 'rejected') && (
+                {/* Rejection Reason */}
+                {(request.status === 'ho_rejected' || request.status === 'md_rejected') && request.rejectionReason && (
                   <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <span>
-                        {request.status === 'approved' ? 'Approved' : 'Rejected'} by {request.approvedBy || request.rejectedBy || 'System'}
-                      </span>
-                      <span>{request.approvedAt || request.rejectedAt ? formatDate(request.approvedAt || request.rejectedAt) : 'N/A'}</span>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-sm font-medium text-red-800">Rejection Reason:</p>
+                      <p className="text-sm text-red-700 mt-1">{request.rejectionReason}</p>
                     </div>
-                    {(request.approvalComments || request.rejectionReason) && (
-                      <p className="mt-2 text-sm text-gray-700">
-                        <span className="font-medium">Comments:</span> {request.approvalComments || request.rejectionReason}
-                      </p>
+                  </div>
+                )}
+
+                {/* Approval Comments */}
+                {(request.hoApprovalComments || request.mdApprovalComments) && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    {request.hoApprovalComments && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-2">
+                        <p className="text-sm font-medium text-green-800">HO Comments:</p>
+                        <p className="text-sm text-green-700 mt-1">{request.hoApprovalComments}</p>
+                      </div>
+                    )}
+                    {request.mdApprovalComments && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-sm font-medium text-blue-800">MD Comments:</p>
+                        <p className="text-sm text-blue-700 mt-1">{request.mdApprovalComments}</p>
+                      </div>
                     )}
                   </div>
                 )}

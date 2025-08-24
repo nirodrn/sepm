@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
-import { Package, Search, Filter, Plus, Eye, Edit, TruckIcon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Package, Search, Filter, Plus, Eye, Edit, TruckIcon, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { materialService } from '../../../services/materialService';
+import { inventoryService } from '../../../services/inventoryService';
+import { subscribeToData } from '../../../firebase/db';
+import LoadingSpinner from '../../../components/Common/LoadingSpinner';
+import ErrorMessage from '../../../components/Common/ErrorMessage';
 
 const RawMaterialsList = () => {
   const navigate = useNavigate();
@@ -11,29 +15,54 @@ const RawMaterialsList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadRawMaterials();
+    
+    // Set up real-time listener
+    const unsubscribe = subscribeToData('rawMaterials', (snapshot) => {
+      try {
+        const data = snapshot.val();
+        if (data) {
+          const materials = Object.entries(data).map(([id, material]) => ({
+            id,
+            ...material
+          })).filter(material => material.status === 'active');
+          setRawMaterials(materials);
+        } else {
+          setRawMaterials([]);
+        }
+      } catch (error) {
+        console.error('Error in real-time listener:', error);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const loadRawMaterials = async () => {
     try {
       setLoading(true);
+      setError('');
       const materials = await materialService.getRawMaterials();
-      setRawMaterials(materials.filter(material => material.status === 'active'));
+      const activeMaterials = materials.filter(material => material.status === 'active');
+      setRawMaterials(activeMaterials);
     } catch (error) {
       setError(error.message);
+      console.error('Failed to load raw materials:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const getStockStatus = (current, reorder) => {
+    if (!current || !reorder) return { status: 'Unknown', color: 'bg-gray-100 text-gray-800' };
     if (current <= reorder) return { status: 'Low', color: 'bg-red-100 text-red-800' };
     if (current <= reorder * 2) return { status: 'Medium', color: 'bg-yellow-100 text-yellow-800' };
     return { status: 'Good', color: 'bg-green-100 text-green-800' };
   };
 
   const getQualityColor = (grade) => {
+    if (!grade) return 'bg-gray-100 text-gray-800';
     switch (grade) {
       case 'A': return 'bg-green-100 text-green-800';
       case 'B': return 'bg-blue-100 text-blue-800';
@@ -43,8 +72,8 @@ const RawMaterialsList = () => {
   };
 
   const filteredMaterials = rawMaterials.filter(material => {
-    const matchesSearch = material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         material.code.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = material.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         material.code?.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (!filterStatus) return matchesSearch;
     
@@ -53,28 +82,15 @@ const RawMaterialsList = () => {
   });
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="space-y-4">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-16 bg-gray-200 rounded"></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner text="Loading raw materials..." />;
+  }
+
+  if (error) {
+    return <ErrorMessage message={error} onRetry={loadRawMaterials} />;
   }
 
   return (
     <div className="p-6">
-      {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
-      
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
@@ -160,36 +176,47 @@ const RawMaterialsList = () => {
                   <tr key={material.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{material.name}</div>
-                        <div className="text-sm text-gray-500">{material.code}</div>
+                        <div className="text-sm font-medium text-gray-900">{material.name || 'Unknown Material'}</div>
+                        <div className="text-sm text-gray-500">{material.code || 'No Code'}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                        {material.category}
+                        {material.category || 'Uncategorized'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-900">{material.currentStock} {material.unit}</span>
+                        <span className="text-sm text-gray-900">
+                          {material.currentStock || 0} {material.unit || 'units'}
+                        </span>
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${stockStatus.color}`}>
                           {stockStatus.status}
                         </span>
                       </div>
+                      {material.currentStock <= material.reorderLevel && (
+                        <div className="flex items-center text-red-600 mt-1">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          <span className="text-xs">Reorder needed</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getQualityColor(material.qualityGrade)}`}>
-                        Grade {material.qualityGrade}
+                        {material.qualityGrade ? `Grade ${material.qualityGrade}` : 'Not Graded'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {material.supplier}
+                      {material.supplier || 'No Supplier'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${material.pricePerUnit}
+                      {material.pricePerUnit ? `$${material.pricePerUnit}` : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {material.lastReceived}
+                      {material.lastReceived || material.updatedAt ? 
+                        new Date(material.lastReceived || material.updatedAt).toLocaleDateString() : 
+                        'Never'
+                      }
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
@@ -221,7 +248,12 @@ const RawMaterialsList = () => {
             <Package className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">No materials found</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {searchTerm || filterStatus ? 'Try adjusting your search criteria.' : 'Get started by requesting materials.'}
+              {rawMaterials.length === 0 
+                ? 'No raw materials have been added to the system yet.' 
+                : searchTerm || filterStatus 
+                ? 'Try adjusting your search criteria.' 
+                : 'Get started by requesting materials.'
+              }
             </p>
           </div>
         )}

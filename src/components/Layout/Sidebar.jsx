@@ -135,6 +135,12 @@ const Sidebar = () => {
           icon: ClipboardCheck,
           path: '/warehouse/packing-materials/delivery-qc',
           roles: ['WarehouseStaff']
+        },
+        {
+          title: 'Request History',
+          icon: Clock,
+          path: '/approvals/history',
+          roles: ['WarehouseStaff', 'Admin']
         }
       ];
     }
@@ -197,6 +203,12 @@ const Sidebar = () => {
           icon: Send,
           path: '/packing-materials/dispatches',
           roles: ['PackingMaterialsStoreManager']
+        },
+        {
+          title: 'All Request History',
+          icon: FileText,
+          path: '/approvals/history',
+          roles: ['PackingMaterialsStoreManager', 'Admin']
         }
       ];
     }
@@ -250,10 +262,16 @@ const Sidebar = () => {
       return [
         ...baseItems,
         {
-          title: 'Final Approvals',
+          title: 'Final Approval Queue',
           icon: Crown,
           path: '/approvals',
           roles: ['MainDirector']
+        },
+        {
+          title: 'Request History',
+          icon: Clock,
+          path: '/approvals/history',
+          roles: ['MainDirector', 'Admin']
         },
         {
           title: 'Strategic Reports',

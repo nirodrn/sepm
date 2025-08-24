@@ -228,7 +228,7 @@ export const packingMaterialsService = {
   async approvePurchaseRequest(requestId, approvalData) {
     try {
       const updates = {
-        status: 'approved_by_ho',
+        status: 'approved',
         hoApprovedBy: auth.currentUser?.uid,
         hoApprovedAt: Date.now(),
         hoApprovalNotes: approvalData?.notes || '',
@@ -238,7 +238,7 @@ export const packingMaterialsService = {
       await updateData(`packingMaterialRequests/${requestId}`, updates);
       
       // Notify warehouse staff that request is approved
-      await this.notifyWarehouseStaff(requestId, 'approved_by_ho');
+      await this.notifyWarehouseStaff(requestId, 'approved');
       
       return updates;
     } catch (error) {
@@ -250,7 +250,7 @@ export const packingMaterialsService = {
     try {
       // First check if HO has approved this request
       const request = await getData(`packingMaterialRequests/${requestId}`);
-      if (!request || request.status !== 'approved_by_ho') {
+      if (!request || request.status !== 'approved') {
         throw new Error('Request must be approved by HO before forwarding to MD');
       }
       

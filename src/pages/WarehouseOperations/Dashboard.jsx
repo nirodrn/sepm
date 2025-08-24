@@ -1,84 +1,92 @@
-import React from 'react';
-import { Package, AlertTriangle, CheckCircle, Clock, FileText, Receipt, TruckIcon, CreditCard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Package, AlertTriangle, CheckCircle, Clock, FileText, Receipt, TruckIcon, CreditCard, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { subscribeToData } from '../../firebase/db';
 import { requestService } from '../../services/requestService';
-import { purchaseOrderService } from '../../services/purchaseOrderService';
-import { invoiceService } from '../../services/invoiceService';
-import { inventoryService } from '../../services/inventoryService';
+import { auth } from '../../firebase/auth';
+import LoadingSpinner from '../../components/Common/LoadingSpinner';
 
 const WarehouseOperationsDashboard = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = React.useState([]);
-  const [recentActivities, setRecentActivities] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
+  const [stats, setStats] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadDashboardData();
+    
+    // Set up real-time listener for material requests
+    const unsubscribe = subscribeToData('materialRequests', () => {
+      loadDashboardData();
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   const loadDashboardData = async () => {
     try {
-      const [requests, pos, invoices, lowStockAlerts] = await Promise.all([
-        requestService.getMaterialRequests({ status: 'pending' }),
-        purchaseOrderService.getPOs(),
-        invoiceService.getInvoices({ status: 'pending' }),
-        inventoryService.getLowStockAlerts()
-      ]);
+      setLoading(true);
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        setError('User not authenticated');
+        return;
+      }
+
+      // Get user's own requests
+      const userRequests = await requestService.getMaterialRequests({ 
+        requestedBy: currentUser.uid 
+      });
+
+      // Calculate stats
+      const pendingRequests = userRequests.filter(req => req.status === 'pending_ho').length;
+      const approvedRequests = userRequests.filter(req => 
+        ['forwarded_to_md', 'md_approved'].includes(req.status)
+      ).length;
+      const rejectedRequests = userRequests.filter(req => 
+        ['ho_rejected', 'md_rejected'].includes(req.status)
+      ).length;
 
       setStats([
         {
-          name: 'Pending Requests',
-          value: requests.length.toString(),
-          change: 'Awaiting approval',
+          name: 'My Pending Requests',
+          value: pendingRequests.toString(),
+          change: 'Awaiting HO approval',
           changeType: 'neutral',
           icon: Clock,
           color: 'yellow'
         },
         {
-          name: 'Active POs',
-          value: pos.filter(po => ['issued', 'partially_received'].includes(po.status)).length.toString(),
-          change: 'In progress',
+          name: 'Approved Requests',
+          value: approvedRequests.toString(),
+          change: 'HO/MD approved',
+          changeType: 'positive',
+          icon: CheckCircle,
+          color: 'green'
+        },
+        {
+          name: 'Rejected Requests',
+          value: rejectedRequests.toString(),
+          change: 'Need revision',
+          changeType: rejectedRequests > 0 ? 'negative' : 'neutral',
+          icon: AlertTriangle,
+          color: 'red'
+        },
+        {
+          name: 'Total Requests',
+          value: userRequests.length.toString(),
+          change: 'All time',
           changeType: 'neutral',
           icon: FileText,
           color: 'blue'
-        },
-        {
-          name: 'Pending Invoices',
-          value: invoices.length.toString(),
-          change: 'Awaiting payment',
-          changeType: 'neutral',
-          icon: Receipt,
-          color: 'purple'
-        },
-        {
-          name: 'Low Stock Items',
-          value: lowStockAlerts.length.toString(),
-          change: 'Requires attention',
-          changeType: lowStockAlerts.length > 0 ? 'negative' : 'neutral',
-          icon: AlertTriangle,
-          color: 'red'
         }
       ]);
 
-      // Create recent activities
-      const activities = [
-        ...requests.slice(0, 2).map(req => ({
-          action: `Material request submitted`,
-          details: `${req.items?.[0]?.materialName || 'Multiple items'}`,
-          time: new Date(req.createdAt).toLocaleDateString(),
-          type: 'request'
-        })),
-        ...pos.slice(0, 2).map(po => ({
-          action: `PO ${po.status === 'issued' ? 'issued' : 'updated'}`,
-          details: po.poNumber,
-          time: new Date(po.updatedAt).toLocaleDateString(),
-          type: 'po'
-        }))
-      ];
-
-      setRecentActivities(activities);
+      setMyRequests(userRequests.slice(0, 5)); // Show latest 5 requests
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
+      setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -100,41 +108,63 @@ const WarehouseOperationsDashboard = () => {
       path: '/warehouse/raw-materials/request'
     },
     {
-      title: 'Create Purchase Order',
-      description: 'Create PO for approved request',
-      icon: FileText,
+      title: 'View Raw Materials',
+      description: 'Browse material inventory',
+      icon: Package,
       color: 'bg-green-600 hover:bg-green-700',
-      path: '/warehouse/purchase-orders/create'
+      path: '/warehouse/raw-materials'
     },
     {
-      title: 'Record Payment',
-      description: 'Record supplier payment',
-      icon: CreditCard,
+      title: 'My Request History',
+      description: 'Track request status',
+      icon: Clock,
       color: 'bg-purple-600 hover:bg-purple-700',
-      path: '/warehouse/invoices'
+      path: '/approvals/history'
     },
     {
-      title: 'View Suppliers',
-      description: 'Manage supplier information',
-      icon: TruckIcon,
+      title: 'Purchase Orders',
+      description: 'Manage purchase orders',
+      icon: FileText,
       color: 'bg-orange-600 hover:bg-orange-700',
-      path: '/warehouse/suppliers'
+      path: '/warehouse/purchase-orders'
     }
   ];
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'md_approved':
+        return 'bg-green-100 text-green-800';
+      case 'ho_rejected':
+      case 'md_rejected':
+        return 'bg-red-100 text-red-800';
+      case 'forwarded_to_md':
+        return 'bg-blue-100 text-blue-800';
+      case 'pending_ho':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'pending_ho':
+        return 'Pending HO';
+      case 'forwarded_to_md':
+        return 'Forwarded to MD';
+      case 'md_approved':
+        return 'MD Approved';
+      case 'ho_rejected':
+        return 'HO Rejected';
+      case 'md_rejected':
+        return 'MD Rejected';
+      default:
+        return status?.replace('_', ' ').toUpperCase() || 'Unknown';
+    }
+  };
+
   if (loading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded"></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner text="Loading dashboard..." />;
   }
 
   return (
@@ -143,6 +173,12 @@ const WarehouseOperationsDashboard = () => {
         <h1 className="text-3xl font-bold text-gray-900">Warehouse Operations</h1>
         <p className="text-gray-600">Manage materials, suppliers, and warehouse operations.</p>
       </div>
+
+      {error && (
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat) => (
@@ -186,26 +222,48 @@ const WarehouseOperationsDashboard = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activities</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">My Recent Requests</h3>
+            <button
+              onClick={() => navigate('/approvals/history')}
+              className="text-blue-600 hover:text-blue-800 text-sm"
+            >
+              View All
+            </button>
+          </div>
           <div className="space-y-4">
-            {recentActivities.map((activity, index) => (
-              <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                <div className={`p-2 rounded-full ${
-                  activity.type === 'request' ? 'bg-blue-100' :
-                  activity.type === 'po' ? 'bg-green-100' :
-                  activity.type === 'payment' ? 'bg-purple-100' :
-                  'bg-gray-100'
-                }`}>
-                  {activity.type === 'request' && <Package className="h-4 w-4 text-blue-600" />}
-                  {activity.type === 'po' && <FileText className="h-4 w-4 text-green-600" />}
-                  {activity.type === 'payment' && <Receipt className="h-4 w-4 text-purple-600" />}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">{activity.action}</p>
-                  <p className="text-xs text-gray-500">{activity.details} • {activity.time}</p>
-                </div>
+            {myRequests.length === 0 ? (
+              <div className="text-center py-8">
+                <Package className="mx-auto h-8 w-8 text-gray-400" />
+                <p className="mt-2 text-sm text-gray-500">No requests submitted yet</p>
               </div>
-            ))}
+            ) : (
+              myRequests.map((request) => (
+                <div key={request.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {request.items?.[0]?.materialName || 'Material Request'}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {request.items?.length || 0} items • {formatDate(request.createdAt)}
+                      </p>
+                    </div>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(request.status)}`}>
+                      {getStatusLabel(request.status)}
+                    </span>
+                  </div>
+                  
+                  {request.rejectionReason && (
+                    <div className="mt-2 bg-red-50 border border-red-200 rounded p-2">
+                      <p className="text-xs text-red-800">
+                        <span className="font-medium">Rejected:</span> {request.rejectionReason}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, Send, ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { Package, Send, ArrowLeft, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { requestService } from '../../../services/requestService';
 import { materialService } from '../../../services/materialService';
 import { auth } from '../../../firebase/auth';
@@ -9,13 +9,14 @@ const RawMaterialRequestForm = () => {
   const navigate = useNavigate();
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [requestItems, setRequestItems] = useState([
-    { id: 1, material: '', quantity: '', unit: 'kg', urgency: 'normal', reason: '' }
+    { id: 1, materialId: '', materialName: '', quantity: '', unit: 'kg', urgency: 'normal', reason: '' }
   ]);
   const [availableMaterials, setAvailableMaterials] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadMaterials();
   }, []);
 
@@ -28,13 +29,11 @@ const RawMaterialRequestForm = () => {
     }
   };
 
-  const unitOptions = ['kg', 'g', 'L', 'mL', 'pieces'];
-
   const addItem = () => {
     const newId = Math.max(...requestItems.map(item => item.id)) + 1;
     setRequestItems([
       ...requestItems,
-      { id: newId, material: '', quantity: '', unit: 'kg', urgency: 'normal', reason: '' }
+      { id: newId, materialId: '', materialName: '', quantity: '', unit: 'kg', urgency: 'normal', reason: '' }
     ]);
   };
 
@@ -45,15 +44,30 @@ const RawMaterialRequestForm = () => {
   };
 
   const updateItem = (id, field, value) => {
-    setRequestItems(requestItems.map(item =>
-      item.id === id ? { ...item, [field]: value } : item
-    ));
+    setRequestItems(requestItems.map(item => {
+      if (item.id === id) {
+        const updatedItem = { ...item, [field]: value };
+        
+        // Auto-fill material details when material is selected
+        if (field === 'materialId') {
+          const material = availableMaterials.find(m => m.id === value);
+          if (material) {
+            updatedItem.materialName = material.name;
+            updatedItem.unit = material.unit;
+          }
+        }
+        
+        return updatedItem;
+      }
+      return item;
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
 
     try {
       const currentUser = auth.currentUser;
@@ -61,9 +75,9 @@ const RawMaterialRequestForm = () => {
         requestType: 'rawMaterial',
         notes: additionalNotes,
         requestedByName: currentUser?.displayName || currentUser?.email || 'Warehouse Staff',
-        items: requestItems.filter(item => item.material && item.quantity).map(item => ({
-          materialId: availableMaterials.find(m => m.name === item.material)?.id,
-          materialName: item.material,
+        items: requestItems.filter(item => item.materialId && item.quantity).map(item => ({
+          materialId: item.materialId,
+          materialName: item.materialName,
           quantity: parseInt(item.quantity),
           unit: item.unit,
           urgency: item.urgency,
@@ -71,8 +85,18 @@ const RawMaterialRequestForm = () => {
         }))
       };
       
+      if (requestData.items.length === 0) {
+        setError('Please add at least one material item to the request');
+        setLoading(false);
+        return;
+      }
+      
       await requestService.createMaterialRequest(requestData);
-      navigate('/warehouse/raw-materials');
+      setSuccess('Material request submitted successfully! Redirecting...');
+      
+      setTimeout(() => {
+        navigate('/warehouse/raw-materials');
+      }, 2000);
     } catch (error) {
       setError(error.message);
     } finally {
@@ -115,6 +139,21 @@ const RawMaterialRequestForm = () => {
         </div>
       </div>
 
+      {success && (
+        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                <div className="w-2 h-2 bg-white rounded-full"></div>
+              </div>
+            </div>
+            <div className="ml-3">
+              <p className="text-green-800 font-medium">{success}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="max-w-6xl">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
@@ -128,6 +167,20 @@ const RawMaterialRequestForm = () => {
               <span>Add Item</span>
             </button>
           </div>
+
+          {availableMaterials.length === 0 && (
+            <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2" />
+                <div>
+                  <p className="text-yellow-800 font-medium">No Materials Available</p>
+                  <p className="text-yellow-700 text-sm">
+                    No raw materials are currently available in the system. Please contact an administrator to add materials first.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-6">
             {requestItems.map((item, index) => (
@@ -151,14 +204,16 @@ const RawMaterialRequestForm = () => {
                       Material *
                     </label>
                     <select
-                      value={item.material}
-                      onChange={(e) => updateItem(item.id, 'material', e.target.value)}
+                      value={item.materialId}
+                      onChange={(e) => updateItem(item.id, 'materialId', e.target.value)}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="">Select material</option>
                       {availableMaterials.map(material => (
-                        <option key={material.id} value={material.name}>{material.name}</option>
+                        <option key={material.id} value={material.id}>
+                          {material.name} ({material.code})
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -180,18 +235,14 @@ const RawMaterialRequestForm = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Unit *
+                      Unit
                     </label>
-                    <select
+                    <input
+                      type="text"
                       value={item.unit}
-                      onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      {unitOptions.map(unit => (
-                        <option key={unit} value={unit}>{unit}</option>
-                      ))}
-                    </select>
+                      readOnly
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+                    />
                   </div>
 
                   <div>
@@ -267,7 +318,7 @@ const RawMaterialRequestForm = () => {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || availableMaterials.length === 0}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Send className="h-4 w-4" />
