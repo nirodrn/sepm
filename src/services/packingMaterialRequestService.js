@@ -1,18 +1,11 @@
 import { getData, setData, updateData, pushData } from '../firebase/db';
 import { auth } from '../firebase/auth';
 
-export const requestService = {
-  // Create Material Request (Warehouse Staff)
-  async createMaterialRequest(requestData) {
+export const packingMaterialRequestService = {
+  // Create Packing Material Request (Warehouse Staff)
+  async createPackingMaterialRequest(requestData) {
     try {
       const currentUser = auth.currentUser;
-      
-      // Route packing material requests to the new service
-      if (requestData.requestType === 'packingMaterial') {
-        const { packingMaterialRequestService } = await import('./packingMaterialRequestService');
-        return await packingMaterialRequestService.createPackingMaterialRequest(requestData);
-      }
-      
       const request = {
         ...requestData,
         status: 'pending_ho',
@@ -30,26 +23,26 @@ export const requestService = {
         }
       };
       
-      const id = await pushData('materialRequests', request);
+      const id = await pushData('packingMaterialRequests', request);
       
       // Create notification for HO
       await this.createNotification('HeadOfOperations', {
-        type: 'material_request',
+        type: 'packing_material_request',
         requestId: id,
-        message: `New material request from ${request.requestedByName}`,
-        data: { requestType: 'material', items: request.items }
+        message: `New packing material request from ${request.requestedByName}`,
+        data: { requestType: 'packingMaterial', items: request.materials }
       });
       
       return { id, ...request };
     } catch (error) {
-      throw new Error(`Failed to create material request: ${error.message}`);
+      throw new Error(`Failed to create packing material request: ${error.message}`);
     }
   },
 
-  // Get Material Requests
-  async getMaterialRequests(filters = {}) {
+  // Get Packing Material Requests
+  async getPackingMaterialRequests(filters = {}) {
     try {
-      const requests = await getData('materialRequests');
+      const requests = await getData('packingMaterialRequests');
       if (!requests) return [];
       
       let filteredRequests = Object.entries(requests).map(([id, request]) => ({
@@ -67,7 +60,7 @@ export const requestService = {
 
       return filteredRequests.sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
-      throw new Error(`Failed to fetch material requests: ${error.message}`);
+      throw new Error(`Failed to fetch packing material requests: ${error.message}`);
     }
   },
 
@@ -75,7 +68,7 @@ export const requestService = {
   async hoApproveAndForward(requestId, approvalData = {}) {
     try {
       const currentUser = auth.currentUser;
-      const request = await getData(`materialRequests/${requestId}`);
+      const request = await getData(`packingMaterialRequests/${requestId}`);
       
       if (!request) {
         throw new Error('Request not found');
@@ -110,22 +103,22 @@ export const requestService = {
         }
       };
       
-      await updateData(`materialRequests/${requestId}`, updates);
+      await updateData(`packingMaterialRequests/${requestId}`, updates);
       
       // Create notification for MD
       await this.createNotification('MainDirector', {
-        type: 'material_request_forwarded',
+        type: 'packing_material_request_forwarded',
         requestId,
-        message: `Material request forwarded for final approval`,
-        data: { requestType: 'material', hoApprovedBy: updates.hoApprovedByName }
+        message: `Packing material request forwarded for final approval`,
+        data: { requestType: 'packingMaterial', hoApprovedBy: updates.hoApprovedByName }
       });
       
       // Notify requester about HO approval
       await this.createNotification(request.requestedBy, {
         type: 'request_ho_approved',
         requestId,
-        message: `Your material request has been approved by HO and forwarded to MD`,
-        data: { requestType: 'material' }
+        message: `Your packing material request has been approved by HO and forwarded to MD`,
+        data: { requestType: 'packingMaterial' }
       });
       
       return updates;
@@ -138,7 +131,7 @@ export const requestService = {
   async hoRejectRequest(requestId, rejectionData) {
     try {
       const currentUser = auth.currentUser;
-      const request = await getData(`materialRequests/${requestId}`);
+      const request = await getData(`packingMaterialRequests/${requestId}`);
       
       if (!request) {
         throw new Error('Request not found');
@@ -162,14 +155,14 @@ export const requestService = {
         }
       };
       
-      await updateData(`materialRequests/${requestId}`, updates);
+      await updateData(`packingMaterialRequests/${requestId}`, updates);
       
       // Notify requester about rejection
       await this.createNotification(request.requestedBy, {
         type: 'request_ho_rejected',
         requestId,
-        message: `Your material request has been rejected by HO`,
-        data: { requestType: 'material', reason: rejectionData.reason }
+        message: `Your packing material request has been rejected by HO`,
+        data: { requestType: 'packingMaterial', reason: rejectionData.reason }
       });
       
       return updates;
@@ -182,7 +175,7 @@ export const requestService = {
   async mdApproveRequest(requestId, approvalData = {}) {
     try {
       const currentUser = auth.currentUser;
-      const request = await getData(`materialRequests/${requestId}`);
+      const request = await getData(`packingMaterialRequests/${requestId}`);
       
       if (!request) {
         throw new Error('Request not found');
@@ -211,21 +204,21 @@ export const requestService = {
         }
       };
       
-      await updateData(`materialRequests/${requestId}`, updates);
+      await updateData(`packingMaterialRequests/${requestId}`, updates);
       
       // Notify requester and HO about final approval
       await this.createNotification(request.requestedBy, {
         type: 'request_md_approved',
         requestId,
-        message: `Your material request has been finally approved by MD`,
-        data: { requestType: 'material' }
+        message: `Your packing material request has been finally approved by MD`,
+        data: { requestType: 'packingMaterial' }
       });
       
       await this.createNotification(request.hoApprovedBy, {
         type: 'request_md_approved',
         requestId,
-        message: `Material request you forwarded has been approved by MD`,
-        data: { requestType: 'material' }
+        message: `Packing material request you forwarded has been approved by MD`,
+        data: { requestType: 'packingMaterial' }
       });
       
       return updates;
@@ -237,14 +230,14 @@ export const requestService = {
   // Create purchase preparation after MD approval
   async createPurchasePreparationAfterApproval(requestId) {
     try {
-      const request = await getData(`materialRequests/${requestId}`);
+      const request = await getData(`packingMaterialRequests/${requestId}`);
       if (!request) throw new Error('Request not found');
       
       const { purchasePreparationService } = await import('./purchasePreparationService');
       return await purchasePreparationService.createPurchasePreparation({
         id: requestId,
-        type: 'material',
-        items: request.items,
+        type: 'packing_material',
+        materials: request.materials,
         mdApprovedAt: request.mdApprovedAt,
         mdApprovedBy: request.mdApprovedBy
       });
@@ -257,7 +250,7 @@ export const requestService = {
   async mdRejectRequest(requestId, rejectionData) {
     try {
       const currentUser = auth.currentUser;
-      const request = await getData(`materialRequests/${requestId}`);
+      const request = await getData(`packingMaterialRequests/${requestId}`);
       
       if (!request) {
         throw new Error('Request not found');
@@ -281,21 +274,21 @@ export const requestService = {
         }
       };
       
-      await updateData(`materialRequests/${requestId}`, updates);
+      await updateData(`packingMaterialRequests/${requestId}`, updates);
       
       // Notify requester and HO about rejection
       await this.createNotification(request.requestedBy, {
         type: 'request_md_rejected',
         requestId,
-        message: `Your material request has been rejected by MD`,
-        data: { requestType: 'material', reason: rejectionData.reason }
+        message: `Your packing material request has been rejected by MD`,
+        data: { requestType: 'packingMaterial', reason: rejectionData.reason }
       });
       
       await this.createNotification(request.hoApprovedBy, {
         type: 'request_md_rejected',
         requestId,
-        message: `Material request you forwarded has been rejected by MD`,
-        data: { requestType: 'material', reason: rejectionData.reason }
+        message: `Packing material request you forwarded has been rejected by MD`,
+        data: { requestType: 'packingMaterial', reason: rejectionData.reason }
       });
       
       return updates;
@@ -316,15 +309,15 @@ export const requestService = {
         updatedAt: Date.now()
       };
       
-      await updateData(`materialRequests/${requestId}`, updates);
+      await updateData(`packingMaterialRequests/${requestId}`, updates);
       
       // Notify relevant parties
-      const request = await getData(`materialRequests/${requestId}`);
-      await this.createNotification('WarehouseStaff', {
+      const request = await getData(`packingMaterialRequests/${requestId}`);
+      await this.createNotification('PackingMaterialsStoreManager', {
         type: 'materials_received',
         requestId,
         message: `Materials received for request - ready to add to store`,
-        data: { requestType: 'material' }
+        data: { requestType: 'packingMaterial' }
       });
       
       return updates;
@@ -337,7 +330,7 @@ export const requestService = {
   async addToStore(requestId) {
     try {
       const currentUser = auth.currentUser;
-      const request = await getData(`materialRequests/${requestId}`);
+      const request = await getData(`packingMaterialRequests/${requestId}`);
       
       if (!request) {
         throw new Error('Request not found');
@@ -351,27 +344,27 @@ export const requestService = {
         updatedAt: Date.now()
       };
       
-      await updateData(`materialRequests/${requestId}`, updates);
+      await updateData(`packingMaterialRequests/${requestId}`, updates);
       
       // Update stock levels for each material
-      if (request.items) {
-        for (const item of request.items) {
-          // Add to raw materials stock
-          const stockPath = `rawMaterialsStock/${item.materialId}`;
+      if (request.materials) {
+        for (const material of request.materials) {
+          // Add to packing materials stock
+          const stockPath = `packingMaterialsStock/${material.materialId}`;
           const currentStock = await getData(stockPath);
           
           if (currentStock) {
             await updateData(stockPath, {
-              quantity: currentStock.quantity + item.quantity,
+              quantity: currentStock.quantity + material.requestedQuantity,
               lastUpdated: Date.now(),
               updatedBy: currentUser?.uid
             });
           } else {
             await setData(stockPath, {
-              materialId: item.materialId,
-              materialName: item.materialName,
-              quantity: item.quantity,
-              unit: item.unit,
+              materialId: material.materialId,
+              materialName: material.materialName,
+              quantity: material.requestedQuantity,
+              unit: material.unit,
               lastUpdated: Date.now(),
               createdBy: currentUser?.uid
             });
@@ -380,16 +373,44 @@ export const requestService = {
       }
       
       // Notify relevant parties
-      await this.createNotification('WarehouseStaff', {
+      await this.createNotification('PackingMaterialsStoreManager', {
         type: 'materials_added_to_store',
         requestId,
         message: `Materials from request have been added to store inventory`,
-        data: { requestType: 'material' }
+        data: { requestType: 'packingMaterial' }
       });
       
       return updates;
     } catch (error) {
       throw new Error(`Failed to add to store: ${error.message}`);
+    }
+  },
+
+  // Get packing material request by ID
+  async getById(requestId) {
+    try {
+      const request = await getData(`packingMaterialRequests/${requestId}`);
+      if (!request) {
+        throw new Error('Request not found');
+      }
+      return { id: requestId, ...request };
+    } catch (error) {
+      throw new Error(`Failed to fetch request: ${error.message}`);
+    }
+  },
+
+  // Update request status
+  async updateStatus(requestId, status) {
+    try {
+      const updates = {
+        status,
+        updatedAt: Date.now()
+      };
+      
+      await updateData(`packingMaterialRequests/${requestId}`, updates);
+      return updates;
+    } catch (error) {
+      throw new Error(`Failed to update request status: ${error.message}`);
     }
   },
 
@@ -431,26 +452,13 @@ export const requestService = {
     }
   },
 
-  // Get request by ID
-  async getById(requestId) {
-    try {
-      const request = await getData(`materialRequests/${requestId}`);
-      if (!request) {
-        throw new Error('Request not found');
-      }
-      return { id: requestId, ...request };
-    } catch (error) {
-      throw new Error(`Failed to fetch request: ${error.message}`);
-    }
-  },
-
   // Get requests by current user
   async getMyRequests() {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) return [];
 
-      const requests = await this.getMaterialRequests({ requestedBy: currentUser.uid });
+      const requests = await this.getPackingMaterialRequests({ requestedBy: currentUser.uid });
       return requests;
     } catch (error) {
       throw new Error(`Failed to fetch user requests: ${error.message}`);
@@ -460,7 +468,7 @@ export const requestService = {
   // Get requests for HO approval
   async getRequestsForHOApproval() {
     try {
-      return await this.getMaterialRequests({ status: 'pending_ho' });
+      return await this.getPackingMaterialRequests({ status: 'pending_ho' });
     } catch (error) {
       throw new Error(`Failed to fetch requests for HO approval: ${error.message}`);
     }
@@ -469,7 +477,7 @@ export const requestService = {
   // Get requests for MD approval
   async getRequestsForMDApproval() {
     try {
-      return await this.getMaterialRequests({ status: 'forwarded_to_md' });
+      return await this.getPackingMaterialRequests({ status: 'forwarded_to_md' });
     } catch (error) {
       throw new Error(`Failed to fetch requests for MD approval: ${error.message}`);
     }

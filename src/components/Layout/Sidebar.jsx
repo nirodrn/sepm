@@ -63,6 +63,12 @@ const Sidebar = () => {
           roles: ['Admin']
         },
         {
+          title: 'Packing Material Status',
+          icon: ShoppingCart,
+          path: '/admin/reports/packing-material-requests',
+          roles: ['Admin']
+        },
+        {
           title: 'System Override',
           icon: Settings,
           path: '/admin/system/data-override',
@@ -107,9 +113,21 @@ const Sidebar = () => {
           roles: ['WarehouseStaff']
         },
         {
+          title: 'Raw Material Requests',
+          icon: Package,
+          path: '/warehouse/raw-materials/requests',
+          roles: ['WarehouseStaff']
+        },
+        {
           title: 'Packing Materials',
           icon: Archive,
           path: '/warehouse/packing-materials',
+          roles: ['WarehouseStaff']
+        },
+        {
+          title: 'Packing Material Requests',
+          icon: ShoppingCart,
+          path: '/warehouse/packing-materials/requests',
           roles: ['WarehouseStaff']
         },
         {
@@ -128,6 +146,12 @@ const Sidebar = () => {
           title: 'Invoices & Payments',
           icon: Receipt,
           path: '/warehouse/invoices',
+          roles: ['WarehouseStaff']
+        },
+        {
+          title: 'Purchase Preparation',
+          icon: ShoppingCart,
+          path: '/warehouse/purchase-preparation',
           roles: ['WarehouseStaff']
         },
         {
@@ -253,6 +277,12 @@ const Sidebar = () => {
           icon: BarChart3,
           path: '/reports',
           roles: ['HeadOfOperations']
+        },
+        {
+          title: 'Packing Material Status',
+          icon: ShoppingCart,
+          path: '/admin/reports/packing-material-requests',
+          roles: ['HeadOfOperations']
         }
       ];
     }
@@ -283,6 +313,12 @@ const Sidebar = () => {
           title: 'Supplier Analysis',
           icon: TrendingUp,
           path: '/reports/supplier-performance',
+          roles: ['MainDirector']
+        },
+        {
+          title: 'Packing Material Status',
+          icon: ShoppingCart,
+          path: '/admin/reports/packing-material-requests',
           roles: ['MainDirector']
         }
       ];

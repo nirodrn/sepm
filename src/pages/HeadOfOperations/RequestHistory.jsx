@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Search, Filter, FileText, Package, ShoppingCart, CheckCircle, XCircle, AlertCircle, Eye } from 'lucide-react';
 import { auth } from '../../firebase/auth';
 import { requestService } from '../../services/requestService';
-import { packingMaterialsService } from '../../services/packingMaterialsService';
+import { packingMaterialRequestService } from '../../services/packingMaterialRequestService';
 import { subscribeToData } from '../../firebase/db';
 import { formatDate } from '../../utils/formatDate';
 import { useRole } from '../../hooks/useRole';
@@ -42,7 +42,7 @@ const RequestHistory = () => {
 
       const [materialRequests, packingMaterialRequests] = await Promise.all([
         requestService.getMaterialRequests(),
-        packingMaterialsService.getPurchaseRequests().catch(() => [])
+        packingMaterialRequestService.getPackingMaterialRequests().catch(() => [])
       ]);
 
       // Combine all requests with type identification
@@ -55,14 +55,14 @@ const RequestHistory = () => {
       const currentUserId = auth.currentUser?.uid;
       
       if (hasRole('WarehouseStaff')) {
-        // Warehouse staff only see their own material requests
+        // Warehouse staff see their own material and packing material requests
         allRequests = allRequests.filter(req => 
-          req.type === 'material' && req.requestedBy === currentUserId
+          (req.type === 'material' || req.type === 'packing_material') && req.requestedBy === currentUserId
         );
       } else if (hasRole('PackingMaterialsStoreManager')) {
-        // Packing store manager only see their own packing material requests
+        // Packing store manager sees their own purchase requests (different from warehouse staff requests)
         allRequests = allRequests.filter(req => 
-          req.type === 'packing_material' && req.requestedBy === currentUserId
+          req.type === 'packing_purchase' && req.requestedBy === currentUserId
         );
       }
       // HO and MD see all requests (no filtering needed)
@@ -115,7 +115,7 @@ const RequestHistory = () => {
       case 'material':
         return 'Material Request';
       case 'packing_material':
-        return 'Packing Material Purchase';
+        return 'Packing Material Request';
       default:
         return 'Unknown';
     }

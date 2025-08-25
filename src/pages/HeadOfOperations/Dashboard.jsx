@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { subscribeToData } from '../../firebase/db';
 import { requestService } from '../../services/requestService';
-import { packingMaterialsService } from '../../services/packingMaterialsService';
+import { packingMaterialRequestService } from '../../services/packingMaterialRequestService';
 import { supplierService } from '../../services/supplierService';
 import { formatDate } from '../../utils/formatDate';
 import LoadingSpinner from '../../components/Common/LoadingSpinner';
@@ -64,7 +64,7 @@ const HeadOfOperationsDashboard = () => {
         suppliers
       ] = await Promise.all([
         requestService.getMaterialRequests(),
-        packingMaterialsService.getPurchaseRequests().catch(() => []),
+        packingMaterialRequestService.getPackingMaterialRequests().catch(() => []),
         supplierService.getSuppliers().catch(() => [])
       ]);
 
@@ -93,7 +93,7 @@ const HeadOfOperationsDashboard = () => {
       
       setPendingApprovals([
         ...pendingMaterial.map(req => ({ ...req, type: 'material' })),
-        ...pendingPacking.map(req => ({ ...req, type: 'packing' }))
+        ...pendingPacking.map(req => ({ ...req, type: 'packing_material' }))
       ]);
 
       // Generate recent activities
@@ -106,7 +106,7 @@ const HeadOfOperationsDashboard = () => {
           status: req.status
         })),
         ...allPackingMaterialRequests.slice(0, 2).map(req => ({
-          type: 'packing_request',
+          type: 'packing_material_request',
           message: `Packing material request ${req.status.replace('_', ' ')}`,
           details: `${req.items?.length || 0} items by ${req.requestedByName}`,
           timestamp: req.updatedAt || req.createdAt,
@@ -137,15 +137,15 @@ const HeadOfOperationsDashboard = () => {
             await requestService.hoRejectRequest(requestId, { reason });
           }
         }
-      } else if (requestType === 'packing') {
+      } else if (requestType === 'packing_material') {
         if (action === 'approve') {
-          await packingMaterialsService.approvePurchaseRequest(requestId, {
+          await packingMaterialRequestService.hoApproveAndForward(requestId, {
             notes: 'Quick approved by HO'
           });
         } else {
           const reason = prompt('Reason for rejection:');
           if (reason) {
-            await packingMaterialsService.rejectPurchaseRequest(requestId, { reason });
+            await packingMaterialRequestService.hoRejectRequest(requestId, { reason });
           }
         }
       }

@@ -37,6 +37,10 @@ export const purchaseOrderService = {
       if (filters.supplierId) {
         filteredPOs = filteredPOs.filter(po => po.supplierId === filters.supplierId);
       }
+      
+      if (filters.requestType) {
+        filteredPOs = filteredPOs.filter(po => po.requestType === filters.requestType);
+      }
 
       return filteredPOs.sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {

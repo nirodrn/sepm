@@ -264,13 +264,12 @@ const RawMaterialRequestForm = () => {
 
                 <div className="mt-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Reason for Request *
+                    Reason for Request
                   </label>
                   <textarea
                     rows={2}
                     value={item.reason}
                     onChange={(e) => updateItem(item.id, 'reason', e.target.value)}
-                    required
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Explain why this material is needed..."
                   />
@@ -287,7 +286,7 @@ const RawMaterialRequestForm = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Summary</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h3>
           
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">

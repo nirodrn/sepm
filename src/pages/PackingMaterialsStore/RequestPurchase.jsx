@@ -1,91 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, Save, ArrowLeft, AlertTriangle, DollarSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Send, ArrowLeft } from 'lucide-react';
 import { packingMaterialsService } from '../../services/packingMaterialsService';
-import { materialService } from '../../services/materialService';
+import { packingMaterialRequestService } from '../../services/packingMaterialRequestService';
+import { useAuth } from '../../hooks/useAuth';
+import LoadingSpinner from '../../components/Common/LoadingSpinner';
+import ErrorMessage from '../../components/Common/ErrorMessage';
 
 const RequestPurchase = () => {
   const navigate = useNavigate();
-  const [requestItems, setRequestItems] = useState([
-    { id: 1, materialId: '', materialName: '', quantity: '', unit: '', urgency: 'normal', notes: '', estimatedPrice: '' }
-  ]);
-  const [availableMaterials, setAvailableMaterials] = useState([]);
-  const [currentStock, setCurrentStock] = useState([]);
-  const [justification, setJustification] = useState('');
-  const [expectedDelivery, setExpectedDelivery] = useState('');
-  const [budgetEstimate, setBudgetEstimate] = useState('');
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [materials, setMaterials] = useState([]);
+  const [formData, setFormData] = useState({
+    materials: [{ materialId: '', quantity: '', urgency: 'normal', notes: '' }],
+    requestedBy: user?.uid || '',
+    department: 'Packing Materials Store',
+    priority: 'normal',
+    notes: ''
+  });
 
   useEffect(() => {
-    loadMaterials();
+    fetchMaterials();
   }, []);
 
-  const loadMaterials = async () => {
+  const fetchMaterials = async () => {
     try {
-      const [materials, stockReport] = await Promise.all([
-        materialService.getPackingMaterials(),
-        packingMaterialsService.getStockReport()
-      ]);
-      
-      setAvailableMaterials(materials.filter(m => m.status === 'active'));
-      setCurrentStock(stockReport);
+      const materialsData = await packingMaterialsService.getAllMaterials();
+      setMaterials(materialsData);
     } catch (error) {
+      console.error('Error fetching materials:', error);
       setError('Failed to load materials');
     }
   };
 
-  const getCurrentStock = (materialId) => {
-    const stockItem = currentStock.find(s => s.materialId === materialId);
-    return stockItem?.currentStock || 0;
-  };
-
-  const getReorderLevel = (materialId) => {
-    const material = availableMaterials.find(m => m.id === materialId);
-    return material?.reorderLevel || 0;
-  };
-
-  const addItem = () => {
-    const newId = Math.max(...requestItems.map(item => item.id)) + 1;
-    setRequestItems([
-      ...requestItems,
-      { id: newId, materialId: '', materialName: '', quantity: '', unit: '', urgency: 'normal', notes: '', estimatedPrice: '' }
-    ]);
-  };
-
-  const removeItem = (id) => {
-    if (requestItems.length > 1) {
-      setRequestItems(requestItems.filter(item => item.id !== id));
-    }
-  };
-
-  const updateItem = (id, field, value) => {
-    setRequestItems(requestItems.map(item => {
-      if (item.id === id) {
-        const updatedItem = { ...item, [field]: value };
-        
-        // Auto-fill material details when material is selected
-        if (field === 'materialId') {
-          const material = availableMaterials.find(m => m.id === value);
-          if (material) {
-            updatedItem.materialName = material.name;
-            updatedItem.unit = material.unit;
-            updatedItem.estimatedPrice = material.pricePerUnit || '';
-          }
-        }
-        
-        return updatedItem;
-      }
-      return item;
+  const addMaterialRow = () => {
+    setFormData(prev => ({
+      ...prev,
+      materials: [...prev.materials, { materialId: '', quantity: '', urgency: 'normal', notes: '' }]
     }));
   };
 
-  const calculateTotalBudget = () => {
-    return requestItems.reduce((total, item) => {
-      const quantity = parseInt(item.quantity) || 0;
-      const price = parseFloat(item.estimatedPrice) || 0;
-      return total + (quantity * price);
-    }, 0);
+  const removeMaterialRow = (index) => {
+    if (formData.materials.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        materials: prev.materials.filter((_, i) => i !== index)
+      }));
+    }
+  };
+
+  const updateMaterial = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      materials: prev.materials.map((material, i) => 
+        i === index ? { ...material, [field]: value } : material
+      )
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -94,171 +66,145 @@ const RequestPurchase = () => {
     setError('');
 
     try {
-      const totalBudget = calculateTotalBudget();
-      
+      // Validate form
+      const validMaterials = formData.materials.filter(m => m.materialId && m.quantity);
+      if (validMaterials.length === 0) {
+        throw new Error('Please add at least one material with quantity');
+      }
+
+      // Prepare request data
       const requestData = {
-        items: requestItems.filter(item => item.materialId && item.quantity).map(item => ({
-          materialId: item.materialId,
-          materialName: item.materialName,
-          quantity: parseInt(item.quantity),
-          unit: item.unit,
-          urgency: item.urgency,
-          notes: item.notes,
-          estimatedPrice: parseFloat(item.estimatedPrice) || 0,
-          currentStock: getCurrentStock(item.materialId),
-          reorderLevel: getReorderLevel(item.materialId)
-        })),
-        justification,
-        expectedDelivery: expectedDelivery || null,
-        budgetEstimate: budgetEstimate ? parseFloat(budgetEstimate) : totalBudget,
-        calculatedBudget: totalBudget
+        ...formData,
+        materials: validMaterials.map(material => {
+          const materialInfo = materials.find(m => m.id === material.materialId);
+          return {
+            ...material,
+            materialName: materialInfo?.name || '',
+            unit: materialInfo?.unit || '',
+            quantity: parseFloat(material.quantity)
+          };
+        }),
+        status: 'pending_ho_approval',
+        createdAt: new Date(),
+        updatedAt: new Date()
       };
+
+      await packingMaterialRequestService.createPackingMaterialRequest(requestData);
       
-      await packingMaterialsService.createPurchaseRequest(requestData);
-      navigate('/packing-materials/stock');
+      navigate('/packing-materials-store/dashboard', {
+        state: { message: 'Purchase request submitted successfully!' }
+      });
     } catch (error) {
-      setError(error.message);
+      console.error('Error submitting request:', error);
+      setError(error.message || 'Failed to submit request');
     } finally {
       setLoading(false);
     }
   };
 
-  const getUrgencyColor = (urgency) => {
-    switch (urgency) {
-      case 'urgent':
-        return 'bg-red-100 text-red-800';
-      case 'high':
-        return 'bg-orange-100 text-orange-800';
-      case 'normal':
-        return 'bg-blue-100 text-blue-800';
-      case 'low':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        return 'bg-blue-100 text-blue-800';
-    }
+  const calculateTotal = () => {
+    return formData.materials.reduce((total, material) => {
+      const materialInfo = materials.find(m => m.id === material.materialId);
+      const price = materialInfo?.price || 0;
+      const quantity = parseFloat(material.quantity) || 0;
+      return total + (price * quantity);
+    }, 0);
   };
 
-  const getStockStatusColor = (current, reorder) => {
-    if (current <= reorder) return 'text-red-600';
-    if (current <= reorder * 2) return 'text-yellow-600';
-    return 'text-green-600';
-  };
-
-  const totalBudget = calculateTotalBudget();
-  const requiresMDApproval = totalBudget > 10000;
+  if (loading && materials.length === 0) {
+    return <LoadingSpinner />;
+  }
 
   return (
-    <div className="p-6">
-      <div className="mb-8">
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={() => navigate('/packing-materials/stock')}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <ShoppingCart className="h-8 w-8 mr-3 text-blue-600" />
-              Request Purchase
-            </h1>
-            <p className="text-gray-600 mt-2">Submit a purchase request for packing materials to Head of Operations</p>
-          </div>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
-
-      {requiresMDApproval && (
-        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2" />
-            <div>
-              <p className="text-yellow-800 font-medium">High Value Request</p>
-              <p className="text-yellow-700 text-sm">
-                This request exceeds $10,000 and will require Main Director approval after HO approval.
-              </p>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white shadow-lg rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => navigate('/packing-materials-store/dashboard')}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5 text-gray-600" />
+                </button>
+                <h1 className="text-2xl font-bold text-gray-900">Request Purchase</h1>
+              </div>
             </div>
           </div>
-        </div>
-      )}
 
-      <form onSubmit={handleSubmit} className="max-w-6xl">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">Request Items</h2>
-            <button
-              type="button"
-              onClick={addItem}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add Item</span>
-            </button>
-          </div>
+          {error && (
+            <div className="px-6 py-4">
+              <ErrorMessage message={error} />
+            </div>
+          )}
 
-          <div className="space-y-6">
-            {requestItems.map((item, index) => {
-              const currentStock = getCurrentStock(item.materialId);
-              const reorderLevel = getReorderLevel(item.materialId);
-              const isLowStock = currentStock <= reorderLevel;
-              const itemTotal = (parseInt(item.quantity) || 0) * (parseFloat(item.estimatedPrice) || 0);
-              
-              return (
-                <div key={item.id} className={`border rounded-lg p-4 ${
-                  isLowStock ? 'border-red-300 bg-red-50' : 'border-gray-200'
-                }`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-medium text-gray-900">Item {index + 1}</h3>
-                    {requestItems.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeItem(item.id)}
-                        className="text-red-600 hover:text-red-800 p-1 rounded"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Request Details */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Priority
+                </label>
+                <select
+                  value={formData.priority}
+                  onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Department
+                </label>
+                <input
+                  type="text"
+                  value={formData.department}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                />
+              </div>
+            </div>
+
+            {/* Materials Section */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Materials Required</h3>
+                <button
+                  type="button"
+                  onClick={addMaterialRow}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Material</span>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {formData.materials.map((material, index) => (
+                  <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 border border-gray-200 rounded-lg">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Material *
                       </label>
                       <select
-                        value={item.materialId}
-                        onChange={(e) => updateItem(item.id, 'materialId', e.target.value)}
+                        value={material.materialId}
+                        onChange={(e) => updateMaterial(index, 'materialId', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       >
-                        <option value="">Select material</option>
-                        {availableMaterials.map(material => (
-                          <option key={material.id} value={material.id}>
-                            {material.name} ({material.code})
+                        <option value="">Select Material</option>
+                        {materials.map(mat => (
+                          <option key={mat.id} value={mat.id}>
+                            {mat.name} ({mat.unit})
                           </option>
                         ))}
                       </select>
-                      {item.materialId && (
-                        <div className="mt-1 text-sm">
-                          <span className={`font-medium ${getStockStatusColor(currentStock, reorderLevel)}`}>
-                            Current: {currentStock} {item.unit}
-                          </span>
-                          <span className="text-gray-500 ml-2">
-                            Reorder: {reorderLevel} {item.unit}
-                          </span>
-                          {isLowStock && (
-                            <div className="flex items-center text-red-600 mt-1">
-                              <AlertTriangle className="h-3 w-3 mr-1" />
-                              <span className="text-xs">Below reorder level</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
 
                     <div>
@@ -267,39 +213,13 @@ const RequestPurchase = () => {
                       </label>
                       <input
                         type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Enter quantity"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Unit
-                      </label>
-                      <input
-                        type="text"
-                        value={item.unit}
-                        readOnly
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Est. Price/{item.unit || 'unit'}
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
+                        value={material.quantity}
+                        onChange={(e) => updateMaterial(index, 'quantity', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="0"
                         min="0"
-                        value={item.estimatedPrice}
-                        onChange={(e) => updateItem(item.id, 'estimatedPrice', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0.00"
+                        step="0.01"
+                        required
                       />
                     </div>
 
@@ -308,9 +228,9 @@ const RequestPurchase = () => {
                         Urgency
                       </label>
                       <select
-                        value={item.urgency}
-                        onChange={(e) => updateItem(item.id, 'urgency', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={material.urgency}
+                        onChange={(e) => updateMaterial(index, 'urgency', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
                         <option value="low">Low</option>
                         <option value="normal">Normal</option>
@@ -318,119 +238,86 @@ const RequestPurchase = () => {
                         <option value="urgent">Urgent</option>
                       </select>
                     </div>
-                  </div>
 
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Item Notes
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={item.notes}
-                      onChange={(e) => updateItem(item.id, 'notes', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Add any special requirements or notes for this item..."
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Notes
+                      </label>
+                      <input
+                        type="text"
+                        value={material.notes}
+                        onChange={(e) => updateMaterial(index, 'notes', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Optional notes"
+                      />
+                    </div>
 
-                  <div className="mt-3 flex justify-between items-center">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getUrgencyColor(item.urgency)}`}>
-                      {item.urgency.charAt(0).toUpperCase() + item.urgency.slice(1)} Priority
-                    </span>
-                    {itemTotal > 0 && (
-                      <div className="flex items-center text-sm text-gray-900">
-                        <DollarSign className="h-4 w-4 mr-1" />
-                        <span className="font-medium">Item Total: ${itemTotal.toFixed(2)}</span>
-                      </div>
-                    )}
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => removeMaterialRow(index)}
+                        disabled={formData.materials.length === 1}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {totalBudget > 0 && (
-            <div className="mt-6 bg-gray-50 rounded-lg p-4">
-              <div className="flex justify-between items-center">
-                <span className="text-lg font-semibold text-gray-900">Calculated Total Budget:</span>
-                <span className="text-2xl font-bold text-blue-600">${totalBudget.toFixed(2)}</span>
+                ))}
               </div>
-              {requiresMDApproval && (
-                <p className="text-sm text-yellow-700 mt-2">
-                  ⚠️ This amount requires Main Director approval
-                </p>
-              )}
             </div>
-          )}
-        </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Details</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {/* Summary */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="text-lg font-medium text-gray-900">
+                  Estimated Total: LKR {calculateTotal().toLocaleString()}
+                </span>
+                <span className="text-sm text-gray-600">
+                  {formData.materials.filter(m => m.materialId && m.quantity).length} items
+                </span>
+              </div>
+            </div>
+
+            {/* General Notes */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Expected Delivery Date
+                Additional Notes
               </label>
-              <input
-                type="date"
-                value={expectedDelivery}
-                onChange={(e) => setExpectedDelivery(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Any additional information or special requirements..."
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Manual Budget Override
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                value={budgetEstimate}
-                onChange={(e) => setBudgetEstimate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder={`Auto-calculated: $${totalBudget.toFixed(2)}`}
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                Leave empty to use calculated total (${totalBudget.toFixed(2)})
-              </p>
+            {/* Submit Button */}
+            <div className="flex justify-end space-x-4">
+              <button
+                type="button"
+                onClick={() => navigate('/packing-materials-store/dashboard')}
+                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {loading ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                <span>{loading ? 'Submitting...' : 'Submit Request'}</span>
+              </button>
             </div>
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Business Justification *
-            </label>
-            <textarea
-              rows={4}
-              value={justification}
-              onChange={(e) => setJustification(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Provide detailed justification for this purchase request. Include business impact, urgency reasons, and expected benefits..."
-            />
-          </div>
-
-          <div className="flex items-center justify-end space-x-4">
-            <button
-              type="button"
-              onClick={() => navigate('/packing-materials/stock')}
-              className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || requestItems.every(item => !item.materialId || !item.quantity) || !justification}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Save className="h-4 w-4" />
-              <span>{loading ? 'Submitting...' : 'Submit Request'}</span>
-            </button>
-          </div>
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   );
 };

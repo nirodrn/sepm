@@ -282,7 +282,6 @@ const RequestMaterials = () => {
                       rows={2}
                       value={item.reason}
                       onChange={(e) => updateItem(item.id, 'reason', e.target.value)}
-                      required
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       placeholder="Explain why this material is needed for packing operations..."
                     />
@@ -300,7 +299,7 @@ const RequestMaterials = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Summary</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h3>
           
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -331,13 +330,21 @@ const RequestMaterials = () => {
             </button>
             <button
               type="submit"
-              disabled={loading || requestItems.every(item => !item.materialId || !item.quantity)}
+              disabled={loading || requestItems.every(item => !item.materialId || !item.quantity) || requestItems.some(item => item.materialId && item.quantity && !item.reason)}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Send className="h-4 w-4" />
               <span>{loading ? 'Submitting...' : 'Submit Request'}</span>
             </button>
           </div>
+          
+          {requestItems.some(item => item.materialId && item.quantity && !item.reason) && (
+            <div className="mt-2 text-center">
+              <p className="text-sm text-red-600">
+                Please provide a reason for all selected materials
+              </p>
+            </div>
+          )}
         </div>
       </form>
     </div>

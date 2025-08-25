@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle, Clock, Package, ShoppingCart, Archive, AlertCircle, ArrowRight, Eye } from 'lucide-react';
 import { requestService } from '../../services/requestService';
-import { packingMaterialsService } from '../../services/packingMaterialsService';
+import { packingMaterialRequestService } from '../../services/packingMaterialRequestService';
 import { subscribeToData } from '../../firebase/db';
 import { useRole } from '../../hooks/useRole';
 import { formatDate } from '../../utils/formatDate';
@@ -48,7 +48,7 @@ const ApprovalQueue = () => {
         // MD sees requests forwarded for final approval
         const [materials, packingMaterials] = await Promise.all([
           requestService.getMaterialRequests({ status: 'forwarded_to_md' }),
-          packingMaterialsService.getPurchaseRequests({ status: 'forwarded_to_md' })
+          packingMaterialRequestService.getPackingMaterialRequests({ status: 'forwarded_to_md' })
         ]);
         
         setMaterialRequests(materials);
@@ -57,7 +57,7 @@ const ApprovalQueue = () => {
         // HO sees requests pending initial approval
         const [materials, packingMaterials] = await Promise.all([
           requestService.getMaterialRequests({ status: 'pending_ho' }),
-          packingMaterialsService.getPurchaseRequests({ status: 'pending_ho' })
+          packingMaterialRequestService.getPackingMaterialRequests({ status: 'pending_ho' })
         ]);
         
         setMaterialRequests(materials);
@@ -78,6 +78,8 @@ const ApprovalQueue = () => {
         await requestService.mdApproveRequest(requestId, { 
           comments: 'Approved by Main Director' 
         });
+        // Create purchase preparation after MD approval
+        await requestService.createPurchasePreparationAfterApproval(requestId);
       } else if (hasRole('HeadOfOperations')) {
         // HO approves and forwards to MD
         await requestService.hoApproveAndForward(requestId, { 
@@ -111,24 +113,16 @@ const ApprovalQueue = () => {
     try {
       if (hasRole('MainDirector')) {
         // MD final approval
-        await packingMaterialsService.mdApprovePurchaseRequest(requestId, { 
+        await packingMaterialRequestService.mdApproveRequest(requestId, { 
           notes: 'Approved by Main Director' 
         });
+        // Create purchase preparation after MD approval
+        await packingMaterialRequestService.createPurchasePreparationAfterApproval(requestId);
       } else if (hasRole('HeadOfOperations')) {
         // HO approves and forwards to MD
-        await packingMaterialsService.approvePurchaseRequest(requestId, { 
+        await packingMaterialRequestService.hoApproveAndForward(requestId, { 
           notes: 'Approved by Head of Operations' 
         });
-        
-        // Check if budget requires MD approval
-        const request = await getData(`packingMaterialRequests/${requestId}`);
-        const budget = request?.budgetEstimate || request?.calculatedBudget || 0;
-        
-        if (budget > 10000) {
-          await packingMaterialsService.forwardPurchaseRequestToMD(requestId, { 
-            comments: 'High value request forwarded for MD approval' 
-          });
-        }
       }
       
       await loadPendingRequests();
@@ -140,7 +134,11 @@ const ApprovalQueue = () => {
 
   const handleRejectPackingMaterialRequest = async (requestId, reason) => {
     try {
-      await packingMaterialsService.rejectPurchaseRequest(requestId, { reason });
+      if (hasRole('MainDirector')) {
+        await packingMaterialRequestService.mdRejectRequest(requestId, { reason });
+      } else if (hasRole('HeadOfOperations')) {
+        await packingMaterialRequestService.hoRejectRequest(requestId, { reason });
+      }
       await loadPendingRequests();
     } catch (err) {
       setError(`Failed to reject packing material request: ${err.message}`);
@@ -422,10 +420,10 @@ const ApprovalQueue = () => {
                         <div className="flex justify-between items-start mb-4">
                           <div>
                             <h3 className="text-lg font-semibold text-gray-900">
-                              Packing Material Purchase Request
+                              Packing Material Request
                             </h3>
                             <p className="text-sm text-gray-600">
-                              Requested by: {request.requestedByName || 'Packing Materials Store Manager'}
+                              Requested by: {request.requestedByName || 'Warehouse Staff'}
                             </p>
                             <p className="text-sm text-gray-600">
                               Date: {formatDate(request.createdAt)}
@@ -450,11 +448,10 @@ const ApprovalQueue = () => {
                                 <div key={index} className="flex justify-between items-center bg-gray-50 p-3 rounded">
                                   <div>
                                     <p className="font-medium text-gray-900">{item.materialName}</p>
-                                    <p className="text-sm text-gray-500">Notes: {item.notes || 'No additional notes'}</p>
+                                    <p className="text-sm text-gray-500">Reason: {item.reason || 'No reason provided'}</p>
                                   </div>
                                   <div className="text-right">
                                     <p className="font-medium text-gray-900">{item.quantity} {item.unit}</p>
-                                    <p className="text-sm text-gray-500">Est. ${(item.estimatedPrice || 0).toFixed(2)}/{item.unit}</p>
                                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                                       item.urgency === 'urgent' ? 'bg-red-100 text-red-800' :
                                       item.urgency === 'high' ? 'bg-orange-100 text-orange-800' :
@@ -470,23 +467,10 @@ const ApprovalQueue = () => {
                           </div>
                         )}
 
-                        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-sm font-medium text-blue-700">Total Items</p>
-                              <p className="text-sm text-blue-900">{request.items?.length || 0}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-blue-700">Budget Estimate</p>
-                              <p className="text-sm text-blue-900">${(request.budgetEstimate || request.calculatedBudget || 0).toFixed(2)}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {request.justification && (
+                        {request.notes && (
                           <div className="mb-4">
-                            <p className="text-sm font-medium text-gray-700">Justification</p>
-                            <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">{request.justification}</p>
+                            <p className="text-sm font-medium text-gray-700">Additional Notes</p>
+                            <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">{request.notes}</p>
                           </div>
                         )}
 

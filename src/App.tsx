@@ -86,6 +86,19 @@ import CreateGRN from './pages/WarehouseOperations/GoodsReceipts/CreateGRN';
 import InvoiceList from './pages/WarehouseOperations/Invoices/List';
 import RecordPayment from './pages/WarehouseOperations/Payments/RecordPayment';
 
+// Packing Material Request Pages
+import PackingMaterialRequestList from './pages/WarehouseOperations/PackingMaterials/RequestList';
+import PackingMaterialRequestStatus from './pages/Admin/Reports/PackingMaterialRequestStatus';
+
+// Raw Material Request Pages
+import RawMaterialRequestList from './pages/WarehouseOperations/RawMaterials/RequestList';
+
+// Purchase Preparation Pages
+import PurchasePreparationList from './pages/WarehouseOperations/PurchasePreparation/List';
+import AssignSupplier from './pages/WarehouseOperations/PurchasePreparation/AssignSupplier';
+import MarkDelivered from './pages/WarehouseOperations/PurchasePreparation/MarkDelivered';
+import DeliveryQCForm from './pages/WarehouseOperations/QualityControl/DeliveryQCForm';
+
 // Data Entry Pages
 import DataEntryDashboard from './pages/DataEntry/Dashboard';
 import AddProduct from './pages/DataEntry/AddProduct';
@@ -226,11 +239,13 @@ function App() {
                   <Route path="/admin/reports/supplier-performance" element={<ProtectedRoute requiredRoles={['Admin']}><SupplierPerformance /></ProtectedRoute>} />
                   <Route path="/admin/reports/stock-analysis" element={<ProtectedRoute requiredRoles={['Admin']}><StockAnalysis /></ProtectedRoute>} />
                   <Route path="/admin/reports/sales-performance" element={<ProtectedRoute requiredRoles={['Admin']}><SalesPerformance /></ProtectedRoute>} />
+                  <Route path="/admin/reports/packing-material-requests" element={<ProtectedRoute requiredRoles={['Admin', 'HeadOfOperations', 'MainDirector']}><PackingMaterialRequestStatus /></ProtectedRoute>} />
                   
                   <Route path="/admin/*" element={<ProtectedRoute requiredRoles={['Admin']}><div className="p-6">Other admin sections coming soon...</div></ProtectedRoute>} />
                   <Route path="/warehouse/*" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><div className="p-6">Warehouse section coming soon...</div></ProtectedRoute>} />
                   <Route path="/warehouse/raw-materials" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><RawMaterialsList /></ProtectedRoute>} />
                   <Route path="/warehouse/raw-materials/request" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><RawMaterialRequestForm /></ProtectedRoute>} />
+                  <Route path="/warehouse/raw-materials/requests" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><RawMaterialRequestList /></ProtectedRoute>} />
                   <Route path="/warehouse/raw-materials/:id" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><RawMaterialStockDetail /></ProtectedRoute>} />
                   <Route path="/warehouse/raw-materials/:id/qc" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><RawMaterialQCForm /></ProtectedRoute>} />
                   <Route path="/warehouse/raw-materials/price-quality-history" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><RawMaterialPriceQualityHistory /></ProtectedRoute>} />
@@ -244,6 +259,19 @@ function App() {
                   <Route path="/warehouse/packing-materials/supplier-allocation" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialSupplierAllocation /></ProtectedRoute>} />
                   <Route path="/warehouse/packing-materials/delivery-qc" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialDeliveryQC /></ProtectedRoute>} />
                   <Route path="/warehouse/packing-materials/delivery-qc/:deliveryId" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialDeliveryQC /></ProtectedRoute>} />
+                  
+                  {/* Packing Material Request Routes */}
+                  <Route path="/warehouse/packing-materials/requests" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialRequestList /></ProtectedRoute>} />
+                  <Route path="/warehouse/packing-materials/requests/:id/allocate" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PackingMaterialSupplierAllocation /></ProtectedRoute>} />
+                  
+                  {/* Purchase Preparation Routes */}
+                  <Route path="/warehouse/purchase-preparation" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PurchasePreparationList /></ProtectedRoute>} />
+                  <Route path="/warehouse/purchase-preparation/:id/assign-supplier" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><AssignSupplier /></ProtectedRoute>} />
+                  <Route path="/warehouse/purchase-preparation/:id/mark-delivered" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><MarkDelivered /></ProtectedRoute>} />
+                  <Route path="/warehouse/delivery-qc/:deliveryId" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><DeliveryQCForm /></ProtectedRoute>} />
+                  
+                  {/* Raw Material Allocation Routes */}
+                  <Route path="/warehouse/raw-materials/requests/:id/allocate" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><SupplierAllocation /></ProtectedRoute>} />
                   
                   {/* Purchase Order Routes */}
                   <Route path="/warehouse/purchase-orders" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><PurchaseOrderList /></ProtectedRoute>} />

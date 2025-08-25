@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Crown, CheckCircle, Clock, BarChart3, TrendingUp, Eye, CheckSquare, X, AlertCircle } from 'lucide-react';
 import { subscribeToData } from '../../firebase/db';
 import { requestService } from '../../services/requestService';
-import { packingMaterialsService } from '../../services/packingMaterialsService';
+import { packingMaterialRequestService } from '../../services/packingMaterialRequestService';
 import { formatDate } from '../../utils/formatDate';
 import LoadingSpinner from '../../components/Common/LoadingSpinner';
 
@@ -44,7 +44,7 @@ const MainDirectorDashboard = () => {
 
       const [allMaterialRequests, allPackingMaterialRequests] = await Promise.all([
         requestService.getMaterialRequests(),
-        packingMaterialsService.getPurchaseRequests().catch(() => [])
+        packingMaterialRequestService.getPackingMaterialRequests().catch(() => [])
       ]);
 
       // Calculate stats
@@ -102,7 +102,7 @@ const MainDirectorDashboard = () => {
       // Get pending requests for MD approval
       const pendingMDRequests = [
         ...allMaterialRequests.filter(req => req.status === 'forwarded_to_md').map(req => ({ ...req, type: 'material' })),
-        ...allPackingMaterialRequests.filter(req => req.status === 'forwarded_to_md').map(req => ({ ...req, type: 'packing' }))
+        ...allPackingMaterialRequests.filter(req => req.status === 'forwarded_to_md').map(req => ({ ...req, type: 'packing_material' }))
       ].slice(0, 5);
 
       setPendingApprovals(pendingMDRequests);
@@ -119,7 +119,7 @@ const MainDirectorDashboard = () => {
           timestamp: req.mdApprovedAt || req.rejectedAt
         })),
         ...allPackingMaterialRequests.filter(req => 
-          ['md_approved', 'rejected'].includes(req.status)
+          ['md_approved', 'ho_rejected', 'md_rejected'].includes(req.status)
         ).map(req => ({
           action: req.status === 'md_approved' ? 'Approved packing material request' : 'Rejected packing material request',
           details: `${req.items?.length || 0} items by ${req.requestedByName}`,
@@ -144,8 +144,8 @@ const MainDirectorDashboard = () => {
         await requestService.mdApproveRequest(requestId, { 
           comments: 'Approved by Main Director' 
         });
-      } else if (requestType === 'packing') {
-        await packingMaterialsService.mdApprovePurchaseRequest(requestId, { 
+      } else if (requestType === 'packing_material') {
+        await packingMaterialRequestService.mdApproveRequest(requestId, { 
           notes: 'Approved by Main Director' 
         });
       }
@@ -161,8 +161,8 @@ const MainDirectorDashboard = () => {
         await requestService.mdRejectRequest(selectedRequestId, { 
           reason: rejectionReason 
         });
-      } else if (selectedRequestType === 'packing') {
-        await packingMaterialsService.rejectPurchaseRequest(selectedRequestId, { 
+      } else if (selectedRequestType === 'packing_material') {
+        await packingMaterialRequestService.mdRejectRequest(selectedRequestId, { 
           reason: rejectionReason 
         });
       }

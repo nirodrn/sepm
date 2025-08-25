@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Package, Save, ArrowLeft, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { auth } from '../../../firebase/auth';
 import { grnService } from '../../../services/grnService';
 import { purchaseOrderService } from '../../../services/purchaseOrderService';
 
