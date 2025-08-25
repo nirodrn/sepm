@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { subscribeToData } from '../../firebase/db';
 import { requestService } from '../../services/requestService';
 import { auth } from '../../firebase/auth';
+import { formatDate } from '../../utils/formatDate';
 import LoadingSpinner from '../../components/Common/LoadingSpinner';
 
 const WarehouseOperationsDashboard = () => {
