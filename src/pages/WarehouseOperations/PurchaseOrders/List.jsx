@@ -14,6 +14,7 @@ const PurchaseOrderList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterSupplier, setFilterSupplier] = useState('');
+  const [filterMaterialType, setFilterMaterialType] = useState('');
 
   useEffect(() => {
     loadData();
@@ -22,12 +23,12 @@ const PurchaseOrderList = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [poData, supplierData] = await Promise.all([
-        purchaseOrderService.getPOs(),
+      const [allPOs, supplierData] = await Promise.all([
+        purchaseOrderService.getPOs({ materialType: filterMaterialType }),
         supplierService.getSuppliers()
       ]);
       
-      setPOs(poData);
+      setPOs(allPOs);
       setSuppliers(supplierData);
     } catch (error) {
       setError(error.message);
@@ -35,6 +36,11 @@ const PurchaseOrderList = () => {
       setLoading(false);
     }
   };
+
+  // Reload data when filter changes
+  useEffect(() => {
+    loadData();
+  }, [filterMaterialType]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -56,6 +62,28 @@ const PurchaseOrderList = () => {
   const getSupplierName = (supplierId) => {
     const supplier = suppliers.find(s => s.id === supplierId);
     return supplier ? supplier.name : 'Unknown Supplier';
+  };
+
+  const getMaterialTypeLabel = (requestType) => {
+    switch (requestType) {
+      case 'material':
+        return 'Raw Material';
+      case 'packing_material':
+        return 'Packing Material';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  const getMaterialTypeColor = (requestType) => {
+    switch (requestType) {
+      case 'material':
+        return 'bg-blue-100 text-blue-800';
+      case 'packing_material':
+        return 'bg-green-100 text-green-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
   };
 
   const filteredPOs = pos.filter(po => {
@@ -139,6 +167,17 @@ const PurchaseOrderList = () => {
                 ))}
               </select>
             </div>
+            <div className="relative">
+              <select
+                value={filterMaterialType}
+                onChange={(e) => setFilterMaterialType(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Types</option>
+                <option value="raw">Raw Materials</option>
+                <option value="packing">Packing Materials</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -150,7 +189,16 @@ const PurchaseOrderList = () => {
                   PO Number
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Material
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Supplier
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Quantity
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Total Amount
@@ -162,7 +210,7 @@ const PurchaseOrderList = () => {
                   Created Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Valid Until
+                  Expected Delivery
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -173,14 +221,26 @@ const PurchaseOrderList = () => {
               {filteredPOs.map((po) => (
                 <tr key={po.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-blue-600">{po.poNumber}</div>
+                    <div className="text-sm font-medium text-blue-600">{po.poNumber || `PO-${po.id.slice(-6)}`}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{po.materialName}</div>
+                    <div className="text-sm text-gray-500">{po.quantity} {po.unit}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getMaterialTypeColor(po.requestType)}`}>
+                      {getMaterialTypeLabel(po.requestType)}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">{getSupplierName(po.supplierId)}</div>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {po.quantity} {po.unit}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">${(po.grandTotal || 0).toFixed(2)}</div>
-                    <div className="text-sm text-gray-500">{po.currency}</div>
+                    <div className="text-sm font-medium text-gray-900">LKR {(po.totalCost || 0).toFixed(2)}</div>
+                    <div className="text-sm text-gray-500">@ LKR {(po.unitPrice || 0).toFixed(2)}/{po.unit}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(po.status)}`}>
@@ -191,7 +251,7 @@ const PurchaseOrderList = () => {
                     {new Date(po.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {po.validUntil ? new Date(po.validUntil).toLocaleDateString() : 'N/A'}
+                    {po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toLocaleDateString() : 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end space-x-2">
@@ -202,11 +262,11 @@ const PurchaseOrderList = () => {
                       >
                         <Eye className="h-4 w-4" />
                       </button>
-                      {po.status === 'draft' && (
+                      {po.status === 'issued' && (
                         <button
-                          onClick={() => navigate(`/warehouse/purchase-orders/edit/${po.id}`)}
-                          className="text-indigo-600 hover:text-indigo-900 p-1 rounded"
-                          title="Edit PO"
+                          onClick={() => navigate(`/warehouse/purchase-preparation/${po.preparationId}/mark-delivered`)}
+                          className="text-green-600 hover:text-green-900 p-1 rounded"
+                          title="Mark as Delivered"
                         >
                           <Edit className="h-4 w-4" />
                         </button>
@@ -230,7 +290,7 @@ const PurchaseOrderList = () => {
             <FileText className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">No purchase orders found</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {searchTerm || filterStatus || filterSupplier ? 'Try adjusting your search criteria.' : 'Get started by creating a new purchase order.'}
+              {searchTerm || filterStatus || filterSupplier || filterMaterialType ? 'Try adjusting your search criteria.' : 'Purchase orders will appear here after supplier allocation.'}
             </p>
           </div>
         )}

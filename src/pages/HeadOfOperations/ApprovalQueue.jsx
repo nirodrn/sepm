@@ -444,7 +444,7 @@ const ApprovalQueue = () => {
                           <div className="mb-4">
                             <p className="text-sm font-medium text-gray-700 mb-2">Requested Items</p>
                             <div className="space-y-2">
-                              {request.items.map((item, index) => (
+                              {(request.materials || request.items || []).map((item, index) => (
                                 <div key={index} className="flex justify-between items-center bg-gray-50 p-3 rounded">
                                   <div>
                                     <p className="font-medium text-gray-900">{item.materialName}</p>

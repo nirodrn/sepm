@@ -79,7 +79,7 @@ const RequestMaterials = () => {
 
     try {
       const requestData = {
-        items: requestItems.filter(item => item.materialId && item.quantity).map(item => ({
+        materials: requestItems.filter(item => item.materialId && item.quantity).map(item => ({
           materialId: item.materialId,
           materialName: item.materialName,
           quantity: parseInt(item.quantity),
@@ -90,7 +90,7 @@ const RequestMaterials = () => {
         })),
         requestedFor: 'packing_area',
         notes: additionalNotes,
-        requestType: 'internal_packing_materials'
+        requestType: 'packingMaterial'
       };
       
       await packingMaterialsService.createInternalRequest(requestData);

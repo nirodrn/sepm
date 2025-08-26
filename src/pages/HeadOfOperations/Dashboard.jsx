@@ -108,7 +108,7 @@ const HeadOfOperationsDashboard = () => {
         ...allPackingMaterialRequests.slice(0, 2).map(req => ({
           type: 'packing_material_request',
           message: `Packing material request ${req.status.replace('_', ' ')}`,
-          details: `${req.items?.length || 0} items by ${req.requestedByName}`,
+          details: `${(req.materials || req.items)?.length || 0} items by ${req.requestedByName}`,
           timestamp: req.updatedAt || req.createdAt,
           status: req.status
         }))

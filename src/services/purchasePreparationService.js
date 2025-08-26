@@ -10,13 +10,14 @@ export const purchasePreparationService = {
       // Create entries for each material in the request
       const preparations = [];
       
-      for (const item of requestData.items || requestData.materials || []) {
+      const materials = requestData.items || requestData.materials || [];
+      for (const item of materials) {
         const preparation = {
           requestId: requestData.id,
           requestType: requestData.type || 'material', // 'material' or 'packing_material'
           materialId: item.materialId,
           materialName: item.materialName || item.name,
-          requiredQuantity: item.quantity || item.requestedQuantity,
+          requiredQuantity: item.requestedQuantity || item.quantity,
           unit: item.unit,
           urgency: item.urgency || 'normal',
           status: 'pending_supplier_assignment',
@@ -143,8 +144,8 @@ export const purchasePreparationService = {
         supplierId: supplierData.supplierId,
         supplierName: supplierData.supplierName,
         expectedDeliveryDate: supplierData.expectedDeliveryDate,
-        unitPrice: supplierData.unitPrice || 0,
-        totalCost: (supplierData.unitPrice || 0) * preparation.requiredQuantity,
+        unitPrice: supplierData.unitPrice || preparation.unitPrice || 0,
+        totalCost: (supplierData.unitPrice || preparation.unitPrice || 0) * preparation.requiredQuantity,
         assignedBy: currentUser?.uid,
         assignedAt: Date.now(),
         updatedAt: Date.now()
@@ -153,7 +154,7 @@ export const purchasePreparationService = {
       await updateData(`purchasePreparations/${preparationId}`, updates);
       
       // Create PO entry
-      await this.createPurchaseOrder(preparationId, { ...supplierData, quantity: preparation.requiredQuantity });
+      await this.createPurchaseOrder(preparationId, supplierData);
       
       return updates;
     } catch (error) {
@@ -175,10 +176,10 @@ export const purchasePreparationService = {
         supplierName: supplierData.supplierName,
         materialId: preparation.materialId,
         materialName: preparation.materialName,
-        quantity: preparation.requiredQuantity,
+        quantity: preparation.requiredQuantity || supplierData.quantity,
         unit: preparation.unit,
-        unitPrice: supplierData.unitPrice || 0,
-        totalCost: (supplierData.unitPrice || 0) * preparation.requiredQuantity,
+        unitPrice: preparation.unitPrice || supplierData.unitPrice || 0,
+        totalCost: (preparation.unitPrice || supplierData.unitPrice || 0) * preparation.requiredQuantity,
         expectedDeliveryDate: supplierData.expectedDeliveryDate,
         status: 'issued',
         createdBy: auth.currentUser?.uid,

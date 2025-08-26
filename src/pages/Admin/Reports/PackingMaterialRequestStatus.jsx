@@ -278,7 +278,7 @@ const PackingMaterialRequestStatus = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {request.materials?.length || 0} items
+                    {(request.materials || request.items)?.length || 0} items
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {request.budgetEstimate ? `LKR ${request.budgetEstimate.toFixed(2)}` : 'N/A'}

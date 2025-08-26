@@ -224,19 +224,19 @@ const PurchaseRequestHistory = () => {
                         <span>MD Approved: {new Date(request.mdApprovedAt).toLocaleDateString()}</span>
                       )}
                       {request.budgetEstimate && (
-                        <span>Budget: ${request.budgetEstimate.toFixed(2)}</span>
+                        <span>Budget: $${request.budgetEstimate.toFixed(2)}</span>
                       )}
                     </div>
                     
                     <div className="space-y-1">
-                      {request.items?.slice(0, 3).map((item, index) => (
+                      {(request.materials || request.items)?.slice(0, 3).map((item, index) => (
                         <div key={index} className="text-sm text-gray-600">
-                          • {item.materialName}: {item.quantity} {item.unit}
+                          • {item.materialName}: {item.requestedQuantity || item.quantity} {item.unit}
                         </div>
                       ))}
-                      {request.items?.length > 3 && (
+                      {(request.materials || request.items)?.length > 3 && (
                         <div className="text-sm text-gray-500">
-                          ... and {request.items.length - 3} more items
+                          ... and {(request.materials || request.items).length - 3} more items
                         </div>
                       )}
                     </div>

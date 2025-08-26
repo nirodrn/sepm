@@ -444,6 +444,20 @@ export const requestService = {
     }
   },
 
+  // Update request status
+  async updateStatus(requestId, status) {
+    try {
+      const updates = {
+        status,
+        updatedAt: Date.now()
+      };
+      
+      await updateData(`materialRequests/${requestId}`, updates);
+      return updates;
+    } catch (error) {
+      throw new Error(`Failed to update request status: ${error.message}`);
+    }
+  },
   // Get requests by current user
   async getMyRequests() {
     try {

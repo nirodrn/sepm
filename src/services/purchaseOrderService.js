@@ -42,6 +42,16 @@ export const purchaseOrderService = {
         filteredPOs = filteredPOs.filter(po => po.requestType === filters.requestType);
       }
 
+      if (filters.materialType) {
+        filteredPOs = filteredPOs.filter(po => {
+          if (filters.materialType === 'raw') {
+            return po.requestType === 'material';
+          } else if (filters.materialType === 'packing') {
+            return po.requestType === 'packing_material';
+          }
+          return true;
+        });
+      }
       return filteredPOs.sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
       throw new Error(`Failed to fetch POs: ${error.message}`);

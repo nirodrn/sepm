@@ -16,6 +16,7 @@ import { requestService } from '../../../services/requestService';
 import { supplierService } from '../../../services/supplierService';
 import { userService } from '../../../services/userService';
 import { purchasePreparationService } from '../../../services/purchasePreparationService';
+import { updateData } from '../../../firebase/db';
 import LoadingSpinner from '../../../components/Common/LoadingSpinner';
 import ErrorMessage from '../../../components/Common/ErrorMessage';
 import jsPDF from 'jspdf';
@@ -63,11 +64,6 @@ const SupplierAllocation = () => {
       const activeSuppliers = suppliersData.filter(supplier => supplier.status === 'active');
       setSuppliers(activeSuppliers);
 
-      // Load existing preparations for this request
-      const existingPreparations = await purchasePreparationService.getPurchasePreparations({
-        requestId: id
-      });
-
       // Initialize allocations for each material
       const initialAllocations = request.items?.map(item => ({
         materialId: item.materialId,
@@ -77,9 +73,13 @@ const SupplierAllocation = () => {
         suppliers: []
       })) || [];
 
+      // Load existing preparations for this request
+      const existingPreparations = await purchasePreparationService.getPurchasePreparations();
+      const requestPreparations = existingPreparations.filter(prep => prep.requestId === id);
+
       // Populate existing allocations from preparations
-      if (existingPreparations.length > 0) {
-        existingPreparations.forEach(prep => {
+      if (requestPreparations.length > 0) {
+        requestPreparations.forEach(prep => {
           const materialIndex = initialAllocations.findIndex(alloc => alloc.materialId === prep.materialId);
           if (materialIndex !== -1) {
             const existingSupplier = initialAllocations[materialIndex].suppliers.find(s => s.supplierId === prep.supplierId);
@@ -90,7 +90,7 @@ const SupplierAllocation = () => {
                 supplierName: prep.supplierName || '',
                 quantity: prep.requiredQuantity || 0,
                 unitPrice: prep.unitPrice || 0,
-                deliveryDate: prep.expectedDeliveryDate || '',
+                deliveryDate: prep.expectedDeliveryDate ? new Date(prep.expectedDeliveryDate).toISOString().split('T')[0] : '',
                 notes: prep.notes || ''
               });
             }
@@ -209,7 +209,7 @@ const SupplierAllocation = () => {
         for (const supplier of material.suppliers) {
           if (supplier.supplierId && supplier.quantity > 0 && supplier.unitPrice > 0 && supplier.deliveryDate) {
             try {
-              const result = await purchasePreparationService.createOrUpdatePreparationForAllocation(
+              await purchasePreparationService.createOrUpdatePreparationForAllocation(
                 id,
                 'material',
                 {
@@ -221,7 +221,7 @@ const SupplierAllocation = () => {
                 },
                 supplier
               );
-              createdPOs.push(result);
+              createdPOs.push({ materialName: material.materialName, supplierName: supplier.supplierName });
             } catch (error) {
               console.error('Error creating PO for supplier allocation:', error);
               throw new Error(`Failed to create PO for ${supplier.supplierName}: ${error.message}`);
@@ -231,10 +231,16 @@ const SupplierAllocation = () => {
       }
       
       // Update request status
-      await requestService.updateStatus(id, 'supplier_allocated');
+      await updateData(`materialRequests/${id}`, {
+        status: 'supplier_allocated',
+        allocatedAt: Date.now(),
+        updatedAt: Date.now()
+      });
 
       // Generate PDFs
       const allocationData = {
+        id: requestData.id,
+        materialName: requestData.items?.[0]?.materialName || 'Multiple Materials',
         allocations: allocations.map(material => ({
           materialId: material.materialId,
           materialName: material.materialName,
@@ -247,7 +253,10 @@ const SupplierAllocation = () => {
       generateSupplierPDFs(allocationData);
 
       setSuccess(`Supplier allocations saved successfully! ${createdPOs.length} Purchase Orders created and PDFs generated.`);
-      navigate('/warehouse/raw-materials/requests');
+      
+      setTimeout(() => {
+        navigate('/warehouse/raw-materials/requests');
+      }, 2000);
 
     } catch (err) {
       console.error('Error saving allocations:', err);

@@ -298,17 +298,17 @@ const RequestHistory = () => {
                         {request.items && request.items.length > 0 && (
                           <div>
                             <p className="text-gray-700">
-                              <span className="font-medium">Items:</span> {request.items.length} item(s)
+                              <span className="font-medium">Items:</span> {(request.materials || request.items)?.length || 0} item(s)
                             </p>
                             <div className="ml-4 space-y-1">
-                              {request.items.slice(0, 3).map((item, index) => (
+                              {(request.materials || request.items)?.slice(0, 3).map((item, index) => (
                                 <p key={index} className="text-sm text-gray-600">
-                                  • {item.materialName}: {item.quantity} {item.unit}
+                                  • {item.materialName}: {item.requestedQuantity || item.quantity} {item.unit}
                                 </p>
                               ))}
-                              {request.items.length > 3 && (
+                              {(request.materials || request.items)?.length > 3 && (
                                 <p className="text-sm text-gray-500">
-                                  ... and {request.items.length - 3} more items
+                                  ... and {(request.materials || request.items).length - 3} more items
                                 </p>
                               )}
                             </div>

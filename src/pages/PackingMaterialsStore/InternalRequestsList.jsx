@@ -177,7 +177,7 @@ const InternalRequestsList = () => {
                     </div>
                     
                     <div className="space-y-2">
-                      {request.items?.map((item, index) => (
+                      {(request.materials || request.items)?.map((item, index) => (
                         <div key={index} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                           <div>
                             <p className="font-medium text-gray-900">{item.materialName}</p>
@@ -187,7 +187,7 @@ const InternalRequestsList = () => {
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="font-medium text-gray-900">{item.quantity} {item.unit}</p>
+                            <p className="font-medium text-gray-900">{item.requestedQuantity || item.quantity} {item.unit}</p>
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getUrgencyColor(item.urgency)}`}>
                               {item.urgency?.toUpperCase()}
                             </span>

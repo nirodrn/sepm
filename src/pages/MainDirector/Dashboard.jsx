@@ -294,7 +294,7 @@ const MainDirectorDashboard = () => {
                       <p className="text-sm text-gray-500">
                         {request.type === 'material' 
                           ? `${request.items?.[0]?.materialName} - ${request.items?.[0]?.quantity} ${request.items?.[0]?.unit}`
-                          : `${request.items?.length || 0} items - $${(request.budgetEstimate || 0).toFixed(2)}`
+                          : `${(request.materials || request.items)?.length || 0} items - $${(request.budgetEstimate || 0).toFixed(2)}`
                         }
                       </p>
                       <p className="text-xs text-gray-400">

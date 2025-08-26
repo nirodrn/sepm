@@ -30,7 +30,7 @@ export const packingMaterialRequestService = {
         type: 'packing_material_request',
         requestId: id,
         message: `New packing material request from ${request.requestedByName}`,
-        data: { requestType: 'packingMaterial', items: request.materials }
+        data: { requestType: 'packingMaterial', materials: request.materials }
       });
       
       return { id, ...request };
@@ -118,7 +118,7 @@ export const packingMaterialRequestService = {
         type: 'request_ho_approved',
         requestId,
         message: `Your packing material request has been approved by HO and forwarded to MD`,
-        data: { requestType: 'packingMaterial' }
+        data: { requestType: 'packingMaterial', materials: request.materials }
       });
       
       return updates;
@@ -162,7 +162,7 @@ export const packingMaterialRequestService = {
         type: 'request_ho_rejected',
         requestId,
         message: `Your packing material request has been rejected by HO`,
-        data: { requestType: 'packingMaterial', reason: rejectionData.reason }
+        data: { requestType: 'packingMaterial', reason: rejectionData.reason, materials: request.materials }
       });
       
       return updates;
@@ -211,14 +211,14 @@ export const packingMaterialRequestService = {
         type: 'request_md_approved',
         requestId,
         message: `Your packing material request has been finally approved by MD`,
-        data: { requestType: 'packingMaterial' }
+        data: { requestType: 'packingMaterial', materials: request.materials }
       });
       
       await this.createNotification(request.hoApprovedBy, {
         type: 'request_md_approved',
         requestId,
         message: `Packing material request you forwarded has been approved by MD`,
-        data: { requestType: 'packingMaterial' }
+        data: { requestType: 'packingMaterial', materials: request.materials }
       });
       
       return updates;
@@ -237,7 +237,7 @@ export const packingMaterialRequestService = {
       return await purchasePreparationService.createPurchasePreparation({
         id: requestId,
         type: 'packing_material',
-        materials: request.materials,
+        items: request.materials,
         mdApprovedAt: request.mdApprovedAt,
         mdApprovedBy: request.mdApprovedBy
       });
@@ -281,14 +281,14 @@ export const packingMaterialRequestService = {
         type: 'request_md_rejected',
         requestId,
         message: `Your packing material request has been rejected by MD`,
-        data: { requestType: 'packingMaterial', reason: rejectionData.reason }
+        data: { requestType: 'packingMaterial', reason: rejectionData.reason, materials: request.materials }
       });
       
       await this.createNotification(request.hoApprovedBy, {
         type: 'request_md_rejected',
         requestId,
         message: `Packing material request you forwarded has been rejected by MD`,
-        data: { requestType: 'packingMaterial', reason: rejectionData.reason }
+        data: { requestType: 'packingMaterial', reason: rejectionData.reason, materials: request.materials }
       });
       
       return updates;

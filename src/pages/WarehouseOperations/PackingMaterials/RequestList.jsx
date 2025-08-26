@@ -117,7 +117,7 @@ const PackingMaterialRequestList = () => {
   };
 
   const filteredRequests = requests.filter(request => {
-    const matchesSearch = request.materials?.some(material => 
+    const matchesSearch = (request.materials || request.items)?.some(material => 
       material.materialName?.toLowerCase().includes(searchTerm.toLowerCase())
     ) || request.id.toLowerCase().includes(searchTerm.toLowerCase());
     
@@ -204,6 +204,12 @@ const PackingMaterialRequestList = () => {
                       <span>{request.materials?.length || 0} materials</span>
                       <span>By: {request.requestedByName}</span>
                       <span>{formatDate(request.createdAt)}</span>
+                      {request.hoApprovedAt && (
+                        <span className="text-green-600">HO Approved: {formatDate(request.hoApprovedAt)}</span>
+                      )}
+                      {request.mdApprovedAt && (
+                        <span className="text-blue-600">MD Approved: {formatDate(request.mdApprovedAt)}</span>
+                      )}
                       {request.budgetEstimate && (
                         <span>Budget: ${request.budgetEstimate.toFixed(2)}</span>
                       )}
