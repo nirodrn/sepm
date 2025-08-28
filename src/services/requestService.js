@@ -67,6 +67,10 @@ export const requestService = {
 
       return filteredRequests.sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
+      if (error.message.includes('Permission denied') || error.code === 'PERMISSION_DENIED') {
+        console.warn('Permission denied accessing material requests, returning empty array');
+        return [];
+      }
       throw new Error(`Failed to fetch material requests: ${error.message}`);
     }
   },

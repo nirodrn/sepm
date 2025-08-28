@@ -4,7 +4,7 @@ import { Package, Save, ArrowLeft, Plus, Trash2, AlertTriangle } from 'lucide-re
 import { auth } from '../../../firebase/auth';
 import { grnService } from '../../../services/grnService';
 import { purchaseOrderService } from '../../../services/purchaseOrderService';
-//2.1
+
 const CreateGRN = () => {
   const navigate = useNavigate();
   const location = useLocation();

@@ -407,6 +407,19 @@ export const purchasePreparationService = {
     }
   },
 
+  // Get purchase preparation by ID
+  async getById(preparationId) {
+    try {
+      const preparation = await getData(`purchasePreparations/${preparationId}`);
+      if (!preparation) {
+        throw new Error('Purchase preparation not found');
+      }
+      return { id: preparationId, ...preparation };
+    } catch (error) {
+      throw new Error(`Failed to fetch purchase preparation: ${error.message}`);
+    }
+  },
+
   // Generate allocation PDF
   generateAllocationPDF(preparationData, allocations) {
     const totalValue = allocations.reduce((sum, allocation) => {

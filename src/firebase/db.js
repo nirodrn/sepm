@@ -12,7 +12,8 @@ export const getUserByUid = async (uid) => {
   } catch (error) {
     // Re-throw with more specific error information
     if (error.code === 'PERMISSION_DENIED') {
-      throw new Error('Permission denied: Unable to access user data. Please check Firebase security rules.');
+      console.warn('Permission denied accessing user data, user may not exist in database');
+      return null;
     }
     throw error;
   }

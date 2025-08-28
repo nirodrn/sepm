@@ -63,8 +63,14 @@ const HeadOfOperationsDashboard = () => {
         allPackingMaterialRequests,
         suppliers
       ] = await Promise.all([
-        requestService.getMaterialRequests(),
-        packingMaterialRequestService.getPackingMaterialRequests().catch(() => []),
+        requestService.getMaterialRequests().catch((err) => {
+          console.warn('Failed to load material requests:', err.message);
+          return [];
+        }),
+        packingMaterialRequestService.getPackingMaterialRequests().catch((err) => {
+          console.warn('Failed to load packing material requests:', err.message);
+          return [];
+        }),
         supplierService.getSuppliers().catch(() => [])
       ]);
 
@@ -118,7 +124,7 @@ const HeadOfOperationsDashboard = () => {
 
     } catch (err) {
       console.error('Error loading dashboard data:', err);
-      setError('Failed to load dashboard data. Please try again.');
+      setError('Some dashboard data may be unavailable due to permissions. Core functionality should still work.');
     } finally {
       setLoading(false);
     }
@@ -154,7 +160,11 @@ const HeadOfOperationsDashboard = () => {
       loadDashboardData();
     } catch (err) {
       console.error('Error processing quick approval:', err);
-      setError('Failed to process approval. Please try again.');
+      if (err.message.includes('Permission denied')) {
+        setError('Permission denied. Please check your access rights or contact an administrator.');
+      } else {
+        setError('Failed to process approval. Please try again.');
+      }
     }
   };
 
