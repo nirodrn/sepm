@@ -1,154 +1,221 @@
-import React from 'react';
-import { Users, Package, TruckIcon, BarChart3 } from 'lucide-react';
-import { useFirestoreQuery } from '../../hooks/useFirestoreQuery';
-import { userService } from '../../services/userService';
+import React, { useState, useEffect } from 'react';
+import { 
+  Users, 
+  Package, 
+  TrendingUp, 
+  AlertTriangle,
+  DollarSign,
+  ShoppingCart,
+  Warehouse,
+  FileText
+} from 'lucide-react';
 import { materialService } from '../../services/materialService';
+import { productService } from '../../services/productService';
+import { userService } from '../../services/userService';
 import { supplierService } from '../../services/supplierService';
+import { LoadingSpinner } from '../../components/Common';
 
 const AdminDashboard = () => {
-  const [stats, setStats] = React.useState([]);
-  const [recentActivities, setRecentActivities] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalProducts: 0,
+    totalMaterials: 0,
+    totalSuppliers: 0,
+    rawMaterialsValue: 0,
+    packingMaterialsValue: 0,
+    lowStockItems: 0,
+    pendingRequests: 0
+  });
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
-    loadDashboardData();
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const [users, products, materials, suppliers] = await Promise.all([
+          userService.getAllUsers(),
+          productService.getAllProducts(),
+          materialService.getAllMaterials(),
+          supplierService.getAllSuppliers()
+        ]);
+
+        // Calculate material values
+        const rawMaterials = materials.filter(m => m.type === 'raw');
+        const packingMaterials = materials.filter(m => m.type === 'packing');
+        
+        const rawMaterialsValue = rawMaterials.reduce((total, material) => {
+          return total + (material.currentStock * material.unitPrice);
+        }, 0);
+
+        const packingMaterialsValue = packingMaterials.reduce((total, material) => {
+          return total + (material.currentStock * material.unitPrice);
+        }, 0);
+
+        // Count low stock items
+        const lowStockItems = materials.filter(m => 
+          m.currentStock <= m.minimumStock
+        ).length;
+
+        setStats({
+          totalUsers: users.length,
+          totalProducts: products.length,
+          totalMaterials: materials.length,
+          totalSuppliers: suppliers.length,
+          rawMaterialsValue,
+          packingMaterialsValue,
+          lowStockItems,
+          pendingRequests: 0 // This would come from request service
+        });
+      } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
   }, []);
 
-  const loadDashboardData = async () => {
-    try {
-      const [users, rawMaterials, packingMaterials, suppliers] = await Promise.all([
-        userService.getAllUsers(),
-        materialService.getRawMaterials(),
-        materialService.getPackingMaterials(),
-        supplierService.getSuppliers()
-      ]);
-
-      const activeUsers = users.filter(u => u.status === 'active').length;
-      const totalMaterials = rawMaterials.length + packingMaterials.length;
-      const activeSuppliers = suppliers.filter(s => s.status === 'active').length;
-
-      setStats([
-        {
-          name: 'Total Users',
-          value: activeUsers.toString(),
-          change: 'Active accounts',
-          changeType: 'neutral',
-          icon: Users
-        },
-        {
-          name: 'Total Materials',
-          value: totalMaterials.toString(),
-          change: `${rawMaterials.length} raw, ${packingMaterials.length} packing`,
-          changeType: 'neutral',
-          icon: Package
-        },
-        {
-          name: 'Active Suppliers',
-          value: activeSuppliers.toString(),
-          change: 'Verified suppliers',
-          changeType: 'neutral',
-          icon: TruckIcon
-        },
-        {
-          name: 'System Status',
-          value: 'Online',
-          change: 'All systems operational',
-          changeType: 'positive',
-          icon: BarChart3
-        }
-      ]);
-
-      // Load recent activities
-      setRecentActivities([
-        { action: 'New user registered', user: 'System', time: '2 hours ago', type: 'user' },
-        { action: 'Material request submitted', user: 'Warehouse Staff', time: '4 hours ago', type: 'request' },
-        { action: 'QC completed for Raw Material A', user: 'QC Officer', time: '6 hours ago', type: 'qc' }
-      ]);
-    } catch (error) {
-      console.error('Failed to load dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
   };
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded"></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
+
+  const statCards = [
+    {
+      title: 'Total Users',
+      value: stats.totalUsers,
+      icon: Users,
+      color: 'bg-blue-500',
+      textColor: 'text-blue-600'
+    },
+    {
+      title: 'Total Products',
+      value: stats.totalProducts,
+      icon: Package,
+      color: 'bg-green-500',
+      textColor: 'text-green-600'
+    },
+    {
+      title: 'Total Materials',
+      value: stats.totalMaterials,
+      icon: Warehouse,
+      color: 'bg-purple-500',
+      textColor: 'text-purple-600'
+    },
+    {
+      title: 'Total Suppliers',
+      value: stats.totalSuppliers,
+      icon: TrendingUp,
+      color: 'bg-orange-500',
+      textColor: 'text-orange-600'
+    },
+    {
+      title: 'Raw Materials Value',
+      value: formatCurrency(stats.rawMaterialsValue),
+      icon: DollarSign,
+      color: 'bg-emerald-500',
+      textColor: 'text-emerald-600'
+    },
+    {
+      title: 'Packing Materials Value',
+      value: formatCurrency(stats.packingMaterialsValue),
+      icon: ShoppingCart,
+      color: 'bg-cyan-500',
+      textColor: 'text-cyan-600'
+    },
+    {
+      title: 'Low Stock Items',
+      value: stats.lowStockItems,
+      icon: AlertTriangle,
+      color: 'bg-red-500',
+      textColor: 'text-red-600'
+    },
+    {
+      title: 'Pending Requests',
+      value: stats.pendingRequests,
+      icon: FileText,
+      color: 'bg-yellow-500',
+      textColor: 'text-yellow-600'
+    }
+  ];
+
   return (
     <div className="p-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="text-gray-600">Welcome back! Here's what's happening today.</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+        <p className="text-gray-600">Overview of system statistics and key metrics</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {stats.map((stat) => (
-          <div key={stat.name} className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">{stat.name}</p>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-              </div>
-              <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <stat.icon className="h-6 w-6 text-blue-600" />
+        {statCards.map((card, index) => {
+          const IconComponent = card.icon;
+          return (
+            <div key={index} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-1">{card.title}</p>
+                  <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+                </div>
+                <div className={`p-3 rounded-full ${card.color}`}>
+                  <IconComponent className="w-6 h-6 text-white" />
+                </div>
               </div>
             </div>
-            <div className="mt-4">
-              <span className={`text-sm font-medium ${
-                stat.changeType === 'positive' ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {stat.change}
-              </span>
-              <span className="text-sm text-gray-500"> vs last month</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activities</h3>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
           <div className="space-y-3">
-            {recentActivities.map((activity, index) => (
-              <div key={index} className="flex items-center space-x-3 text-sm">
-                <div className={`w-2 h-2 rounded-full ${
-                  activity.type === 'user' ? 'bg-green-500' :
-                  activity.type === 'request' ? 'bg-blue-500' :
-                  activity.type === 'qc' ? 'bg-purple-500' :
-                  'bg-gray-500'
-                }`}></div>
-                <span className="text-gray-600">{activity.action}</span>
-                <span className="text-gray-400">{activity.time}</span>
+            <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center">
+                <Users className="w-5 h-5 text-blue-600 mr-3" />
+                <span className="font-medium">Manage Users</span>
               </div>
-            ))}
+            </button>
+            <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center">
+                <Package className="w-5 h-5 text-green-600 mr-3" />
+                <span className="font-medium">Manage Products</span>
+              </div>
+            </button>
+            <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center">
+                <Warehouse className="w-5 h-5 text-purple-600 mr-3" />
+                <span className="font-medium">Manage Materials</span>
+              </div>
+            </button>
+            <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center">
+                <TrendingUp className="w-5 h-5 text-orange-600 mr-3" />
+                <span className="font-medium">View Reports</span>
+              </div>
+            </button>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">System Health</h3>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">System Status</h2>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Database Status</span>
-              <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">Online</span>
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+              <span className="text-green-800 font-medium">System Health</span>
+              <span className="text-green-600 font-semibold">Operational</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">API Response Time</span>
-              <span className="text-sm font-medium text-gray-900">124ms</span>
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+              <span className="text-blue-800 font-medium">Database Status</span>
+              <span className="text-blue-600 font-semibold">Connected</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Active Sessions</span>
-              <span className="text-sm font-medium text-gray-900">18</span>
+            <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+              <span className="text-yellow-800 font-medium">Low Stock Alerts</span>
+              <span className="text-yellow-600 font-semibold">{stats.lowStockItems} Items</span>
             </div>
           </div>
         </div>

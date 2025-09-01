@@ -43,7 +43,9 @@ const PackingMaterialSupplierAllocation = () => {
       setError('');
 
       // Load request data
-      const request = await packingMaterialRequestService.getById(id);
+      const requests = await packingMaterialRequestService.getPackingMaterialRequests();
+      const request = requests.find(r => r.id === id);
+      
       if (!request) {
         throw new Error('Request not found');
       }
@@ -66,37 +68,42 @@ const PackingMaterialSupplierAllocation = () => {
       setSuppliers(activeSuppliers);
 
       // Initialize allocations for each material
-      const initialAllocations = request.items?.map(item => ({
+      const materials = request.materials || request.items || [];
+      const initialAllocations = materials.map(item => ({
         materialId: item.materialId,
         materialName: item.materialName,
-        requestedQuantity: item.quantity,
+        requestedQuantity: item.requestedQuantity || item.quantity,
         unit: item.unit,
         suppliers: []
-      })) || [];
+      }));
 
       // Load existing preparations for this request
-      const existingPreparations = await purchasePreparationService.getPurchasePreparations();
-      const requestPreparations = existingPreparations.filter(prep => prep.requestId === id);
+      try {
+        const existingPreparations = await purchasePreparationService.getPurchasePreparations();
+        const requestPreparations = existingPreparations.filter(prep => prep.requestId === id);
 
-      // Populate existing allocations from preparations
-      if (requestPreparations.length > 0) {
-        requestPreparations.forEach(prep => {
-          const materialIndex = initialAllocations.findIndex(alloc => alloc.materialId === prep.materialId);
-          if (materialIndex !== -1) {
-            const existingSupplier = initialAllocations[materialIndex].suppliers.find(s => s.supplierId === prep.supplierId);
-            if (!existingSupplier) {
-              initialAllocations[materialIndex].suppliers.push({
-                preparationId: prep.id,
-                supplierId: prep.supplierId,
-                supplierName: prep.supplierName || '',
-                quantity: prep.requiredQuantity || 0,
-                unitPrice: prep.unitPrice || 0,
-                deliveryDate: prep.expectedDeliveryDate ? new Date(prep.expectedDeliveryDate).toISOString().split('T')[0] : '',
-                notes: prep.notes || ''
-              });
+        // Populate existing allocations from preparations
+        if (requestPreparations.length > 0) {
+          requestPreparations.forEach(prep => {
+            const materialIndex = initialAllocations.findIndex(alloc => alloc.materialId === prep.materialId);
+            if (materialIndex !== -1) {
+              const existingSupplier = initialAllocations[materialIndex].suppliers.find(s => s.supplierId === prep.supplierId);
+              if (!existingSupplier) {
+                initialAllocations[materialIndex].suppliers.push({
+                  preparationId: prep.id,
+                  supplierId: prep.supplierId,
+                  supplierName: prep.supplierName || '',
+                  quantity: prep.requiredQuantity || 0,
+                  unitPrice: prep.unitPrice || 0,
+                  deliveryDate: prep.expectedDeliveryDate ? new Date(prep.expectedDeliveryDate).toISOString().split('T')[0] : '',
+                  notes: prep.notes || ''
+                });
+              }
             }
-          }
-        });
+          });
+        }
+      } catch (prepError) {
+        console.warn('Could not load existing preparations:', prepError.message);
       }
 
       setAllocations(initialAllocations);
@@ -191,7 +198,7 @@ const PackingMaterialSupplierAllocation = () => {
       setSaving(true);
       setError('');
 
-      // Only validate that we have at least one valid supplier allocation
+      // Validate that we have at least one valid supplier allocation
       const hasValidAllocations = allocations.some(material => 
         material.suppliers.some(supplier => 
           supplier.supplierId && supplier.quantity > 0 && supplier.unitPrice > 0 && supplier.deliveryDate
@@ -471,8 +478,8 @@ const PackingMaterialSupplierAllocation = () => {
     doc.save(fileName);
   };
 
-  if (loading) return <LoadingSpinner />;
-  if (error) return <ErrorMessage message={error} />;
+  if (loading) return <LoadingSpinner text="Loading request data..." />;
+  if (error) return <ErrorMessage message={error} onRetry={loadData} />;
   if (!requestData) return <ErrorMessage message="Request not found" />;
 
   return (
@@ -500,7 +507,8 @@ const PackingMaterialSupplierAllocation = () => {
                     suppliers: material.suppliers.filter(s => s.supplierId && s.quantity > 0)
                   })).filter(material => material.suppliers.length > 0)
                 })}
-                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={!hasAnyCompleteAllocation()}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Download className="w-4 h-4 mr-2" />
                 Download PDF
@@ -566,175 +574,186 @@ const PackingMaterialSupplierAllocation = () => {
 
         {/* Materials Allocation */}
         <div className="space-y-6">
-          {allocations.map((material, materialIndex) => {
-            const totalAllocated = getTotalAllocated(materialIndex);
-            const remaining = getRemainingQuantity(materialIndex);
-            const isFullyAllocated = remaining === 0;
-            const isOverAllocated = remaining < 0;
+          {allocations.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+              <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Materials Found</h3>
+              <p className="text-gray-500">
+                This request doesn't contain any materials to allocate.
+              </p>
+            </div>
+          ) : (
+            allocations.map((material, materialIndex) => {
+              const totalAllocated = getTotalAllocated(materialIndex);
+              const remaining = getRemainingQuantity(materialIndex);
+              const isFullyAllocated = remaining === 0;
+              const isOverAllocated = remaining < 0;
 
-            return (
-              <div key={material.materialId} className="bg-white rounded-lg shadow-sm border border-gray-200">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">{material.materialName}</h3>
-                      <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600">
-                        <span>MD Approved: {material.requestedQuantity} {material.unit}</span>
-                        <span>Allocated: {totalAllocated} {material.unit}</span>
-                        <span className={`font-medium ${
-                          isOverAllocated ? 'text-red-600' : 
-                          isFullyAllocated ? 'text-green-600' : 'text-orange-600'
-                        }`}>
-                          Remaining: {remaining} {material.unit}
-                        </span>
+              return (
+                <div key={material.materialId} className="bg-white rounded-lg shadow-sm border border-gray-200">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">{material.materialName}</h3>
+                        <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600">
+                          <span>MD Approved: {material.requestedQuantity} {material.unit}</span>
+                          <span>Allocated: {totalAllocated} {material.unit}</span>
+                          <span className={`font-medium ${
+                            isOverAllocated ? 'text-red-600' : 
+                            isFullyAllocated ? 'text-green-600' : 'text-orange-600'
+                          }`}>
+                            Remaining: {remaining} {material.unit}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {isOverAllocated && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            Over Allocated
+                          </span>
+                        )}
+                        {isFullyAllocated && !isOverAllocated && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Fully Allocated
+                          </span>
+                        )}
+                        {!isFullyAllocated && !isOverAllocated && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                            <Clock className="w-3 h-3 mr-1" />
+                            Partially Allocated
+                          </span>
+                        )}
+                        <button
+                          onClick={() => addSupplierToMaterial(materialIndex)}
+                          className="flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          <Plus className="w-4 h-4 mr-1" />
+                          Add Supplier
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {isOverAllocated && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Over Allocated
-                        </span>
-                      )}
-                      {isFullyAllocated && !isOverAllocated && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Fully Allocated
-                        </span>
-                      )}
-                      {!isFullyAllocated && !isOverAllocated && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          <Clock className="w-3 h-3 mr-1" />
-                          Partially Allocated
-                        </span>
-                      )}
-                      <button
-                        onClick={() => addSupplierToMaterial(materialIndex)}
-                        className="flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add Supplier
-                      </button>
-                    </div>
                   </div>
-                </div>
 
-                <div className="p-6">
-                  {material.suppliers.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p>No suppliers allocated yet</p>
-                      <p className="text-sm">Click "Add Supplier" to start allocation</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {material.suppliers.map((supplier, supplierIndex) => (
-                        <div key={supplierIndex} className="border border-gray-200 rounded-lg p-4">
-                          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Supplier *
-                              </label>
-                              <select
-                                value={supplier.supplierId}
-                                onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'supplierId', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                required
-                              >
-                                <option value="">Select Supplier</option>
-                                {suppliers.map(sup => (
-                                  <option key={sup.id} value={sup.id}>{sup.name}</option>
-                                ))}
-                              </select>
-                            </div>
+                  <div className="p-6">
+                    {material.suppliers.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                        <p>No suppliers allocated yet</p>
+                        <p className="text-sm">Click "Add Supplier" to start allocation</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {material.suppliers.map((supplier, supplierIndex) => (
+                          <div key={supplierIndex} className="border border-gray-200 rounded-lg p-4">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Supplier *
+                                </label>
+                                <select
+                                  value={supplier.supplierId}
+                                  onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'supplierId', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  required
+                                >
+                                  <option value="">Select Supplier</option>
+                                  {suppliers.map(sup => (
+                                    <option key={sup.id} value={sup.id}>{sup.name}</option>
+                                  ))}
+                                </select>
+                              </div>
 
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Quantity ({material.unit}) *
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                max={getMaxQuantityForSupplier(materialIndex, supplierIndex)}
-                                step="0.01"
-                                value={supplier.quantity}
-                                onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'quantity', parseFloat(e.target.value) || 0)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="0.00"
-                                required
-                              />
-                              <p className="text-xs text-gray-500 mt-1">
-                                Max: {getMaxQuantityForSupplier(materialIndex, supplierIndex)} {material.unit}
-                              </p>
-                            </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Quantity ({material.unit}) *
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={getMaxQuantityForSupplier(materialIndex, supplierIndex)}
+                                  step="0.01"
+                                  value={supplier.quantity}
+                                  onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'quantity', parseFloat(e.target.value) || 0)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder="0.00"
+                                  required
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Max: {getMaxQuantityForSupplier(materialIndex, supplierIndex)} {material.unit}
+                                </p>
+                              </div>
 
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Unit Price (LKR) *
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={supplier.unitPrice}
-                                onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'unitPrice', parseFloat(e.target.value) || 0)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="0.00"
-                                required
-                              />
-                            </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Unit Price (LKR) *
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={supplier.unitPrice}
+                                  onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'unitPrice', parseFloat(e.target.value) || 0)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder="0.00"
+                                  required
+                                />
+                              </div>
 
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Delivery Date *
-                              </label>
-                              <input
-                                type="date"
-                                value={supplier.deliveryDate}
-                                onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'deliveryDate', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                required
-                              />
-                            </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Delivery Date *
+                                </label>
+                                <input
+                                  type="date"
+                                  value={supplier.deliveryDate}
+                                  onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'deliveryDate', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  required
+                                />
+                              </div>
 
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Total (LKR)
-                              </label>
-                              <div className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-medium">
-                                {((supplier.quantity || 0) * (supplier.unitPrice || 0)).toLocaleString()}
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Total (LKR)
+                                </label>
+                                <div className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-medium">
+                                  {((supplier.quantity || 0) * (supplier.unitPrice || 0)).toLocaleString()}
+                                </div>
+                              </div>
+
+                              <div className="flex items-end">
+                                <button
+                                  type="button"
+                                  onClick={() => removeSupplierFromMaterial(materialIndex, supplierIndex)}
+                                  className="w-full flex items-center justify-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
                             </div>
 
-                            <div className="flex items-end">
-                              <button
-                                onClick={() => removeSupplierFromMaterial(materialIndex, supplierIndex)}
-                                className="w-full flex items-center justify-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                            <div className="mt-4">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Notes
+                              </label>
+                              <textarea
+                                value={supplier.notes}
+                                onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'notes', e.target.value)}
+                                rows={2}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Additional notes or requirements..."
+                              />
                             </div>
                           </div>
-
-                          <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Notes
-                            </label>
-                            <textarea
-                              value={supplier.notes}
-                              onChange={(e) => updateSupplierAllocation(materialIndex, supplierIndex, 'notes', e.target.value)}
-                              rows={2}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              placeholder="Additional notes or requirements..."
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
 
         {/* Action Buttons */}

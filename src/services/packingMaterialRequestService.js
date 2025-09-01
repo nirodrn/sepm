@@ -418,8 +418,11 @@ export const packingMaterialRequestService = {
   async createNotification(recipientRole, notificationData) {
     try {
       // Get users with the specified role
-      const users = await getData('users');
-      if (!users) return;
+      const users = await getData('users').catch(() => null);
+      if (!users) {
+        console.warn('Unable to access users data for notifications, skipping notification creation');
+        return;
+      }
 
       const targetUsers = Object.entries(users).filter(([_, user]) => {
         if (typeof recipientRole === 'string' && recipientRole.includes('@')) {
@@ -431,24 +434,32 @@ export const packingMaterialRequestService = {
 
       // If recipientRole is a user ID, send directly
       if (typeof recipientRole === 'string' && !recipientRole.includes('Operations') && !recipientRole.includes('Director')) {
-        await pushData(`notifications/${recipientRole}`, {
-          ...notificationData,
-          status: 'unread',
-          createdAt: Date.now()
-        });
+        try {
+          await pushData(`notifications/${recipientRole}`, {
+            ...notificationData,
+            status: 'unread',
+            createdAt: Date.now()
+          });
+        } catch (error) {
+          console.warn('Failed to create direct notification:', error.message);
+        }
         return;
       }
 
       // Send to all users with the role
       for (const [userId, _] of targetUsers) {
-        await pushData(`notifications/${userId}`, {
-          ...notificationData,
-          status: 'unread',
-          createdAt: Date.now()
-        });
+        try {
+          await pushData(`notifications/${userId}`, {
+            ...notificationData,
+            status: 'unread',
+            createdAt: Date.now()
+          });
+        } catch (error) {
+          console.warn(`Failed to create notification for user ${userId}:`, error.message);
+        }
       }
     } catch (error) {
-      console.error('Failed to create notification:', error);
+      console.warn('Failed to create notification:', error.message);
     }
   },
 

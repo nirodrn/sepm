@@ -98,6 +98,7 @@ import PurchasePreparationList from './pages/WarehouseOperations/PurchasePrepara
 import AssignSupplier from './pages/WarehouseOperations/PurchasePreparation/AssignSupplier';
 import MarkDelivered from './pages/WarehouseOperations/PurchasePreparation/MarkDelivered';
 import DeliveryQCForm from './pages/WarehouseOperations/QualityControl/DeliveryQCForm';
+import GRNQCList from './pages/WarehouseOperations/QualityControl/GRNQCList';
 
 // Data Entry Pages
 import DataEntryDashboard from './pages/DataEntry/Dashboard';
@@ -284,6 +285,9 @@ function App() {
                   {/* Invoice and Payment Routes */}
                   <Route path="/warehouse/invoices" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><InvoiceList /></ProtectedRoute>} />
                   <Route path="/warehouse/invoices/:invoiceId/payment" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><RecordPayment /></ProtectedRoute>} />
+                  
+                  {/* QC Routes */}
+                  <Route path="/warehouse/qc/grn-list" element={<ProtectedRoute requiredRoles={['WarehouseStaff', 'Admin']}><GRNQCList /></ProtectedRoute>} />
                   
                   {/* Head of Operations Routes */}
                   <Route path="/approvals/*" element={<ProtectedRoute requiredRoles={['HeadOfOperations', 'MainDirector']}><div className="p-6">Approvals section coming soon...</div></ProtectedRoute>} />

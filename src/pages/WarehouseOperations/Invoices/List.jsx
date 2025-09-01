@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Receipt, Plus, Search, Filter, Eye, Edit, CreditCard } from 'lucide-react';
+import { Receipt, Plus, Search, Filter, Eye, Edit, CreditCard, Download, FileText } from 'lucide-react';
 import { invoiceService } from '../../../services/invoiceService';
 import { supplierService } from '../../../services/supplierService';
+import { grnService } from '../../../services/grnService';
 import LoadingSpinner from '../../../components/Common/LoadingSpinner';
+import jsPDF from 'jspdf';
 
 const InvoiceList = () => {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [grns, setGRNs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,18 +25,124 @@ const InvoiceList = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [invoiceData, supplierData] = await Promise.all([
+      const [invoiceData, supplierData, grnData] = await Promise.all([
         invoiceService.getInvoices(),
-        supplierService.getSuppliers()
+        supplierService.getSuppliers(),
+        grnService.getGRNs()
       ]);
       
       setInvoices(invoiceData);
       setSuppliers(supplierData);
+      setGRNs(grnData);
     } catch (error) {
       setError(error.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const generatePrintableInvoice = (invoice) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 15;
+    
+    // Company Header
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Sewanagala Ayurvedic Drugs Manufacture Pvt Ltd', pageWidth / 2, 30, { align: 'center' });
+    
+    // Invoice Title
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SUPPLIER INVOICE', pageWidth / 2, 45, { align: 'center' });
+    
+    // Invoice Details
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Invoice Number: ${invoice.invoiceNumber}`, margin, 65);
+    doc.text(`Date: ${new Date(invoice.createdAt).toLocaleDateString()}`, margin, 73);
+    doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString()}`, margin, 81);
+    
+    // Supplier Details
+    const supplier = suppliers.find(s => s.id === invoice.supplierId);
+    doc.text(`Supplier: ${supplier?.name || 'Unknown Supplier'}`, margin, 95);
+    doc.text(`Contact: ${supplier?.email || 'N/A'}`, margin, 103);
+    
+    // GRN Details
+    if (invoice.grnNumber) {
+      doc.text(`GRN Number: ${invoice.grnNumber}`, pageWidth - 80, 65);
+      doc.text(`PO Number: ${invoice.poNumber}`, pageWidth - 80, 73);
+    }
+    
+    // Items Table
+    let yPosition = 125;
+    doc.setFont('helvetica', 'bold');
+    doc.text('ITEMS', margin, yPosition);
+    yPosition += 10;
+    
+    // Table headers
+    doc.setFontSize(10);
+    doc.text('Description', margin, yPosition);
+    doc.text('Qty', margin + 80, yPosition);
+    doc.text('Unit Price', margin + 110, yPosition);
+    doc.text('Total', margin + 150, yPosition);
+    
+    doc.line(margin, yPosition + 2, pageWidth - margin, yPosition + 2);
+    yPosition += 10;
+    
+    // Items
+    doc.setFont('helvetica', 'normal');
+    invoice.items?.forEach(item => {
+      doc.text(item.materialName, margin, yPosition);
+      doc.text(`${item.quantity} ${item.unit}`, margin + 80, yPosition);
+      doc.text(`LKR ${item.unitPrice.toFixed(2)}`, margin + 110, yPosition);
+      doc.text(`LKR ${item.total.toFixed(2)}`, margin + 150, yPosition);
+      yPosition += 8;
+    });
+    
+    // Totals
+    yPosition += 10;
+    doc.line(margin + 100, yPosition, pageWidth - margin, yPosition);
+    yPosition += 10;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Subtotal: LKR ${invoice.subtotal?.toFixed(2) || '0.00'}`, margin + 110, yPosition);
+    yPosition += 8;
+    doc.text(`Tax: LKR ${invoice.tax?.toFixed(2) || '0.00'}`, margin + 110, yPosition);
+    yPosition += 8;
+    doc.text(`TOTAL: LKR ${invoice.total?.toFixed(2) || '0.00'}`, margin + 110, yPosition);
+    
+    // Payment Status
+    yPosition += 20;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Payment Status: ${invoice.paymentStatus?.toUpperCase() || 'PENDING'}`, margin, yPosition);
+    doc.text(`Amount Paid: LKR ${(invoice.totalPaid || 0).toFixed(2)}`, margin, yPosition + 8);
+    doc.text(`Amount Due: LKR ${(invoice.remainingAmount || invoice.total || 0).toFixed(2)}`, margin, yPosition + 16);
+    
+    // Footer
+    doc.setFontSize(9);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, margin, 280);
+    
+    // Save PDF
+    doc.save(`invoice-${invoice.invoiceNumber}.pdf`);
+  };
+
+  const getPaymentStatusColor = (paymentStatus, remainingAmount) => {
+    if (paymentStatus === 'paid' || remainingAmount <= 0) {
+      return 'bg-green-100 text-green-800';
+    } else if (paymentStatus === 'partially_paid') {
+      return 'bg-yellow-100 text-yellow-800';
+    }
+    return 'bg-red-100 text-red-800';
+  };
+
+  const getPaymentStatusLabel = (paymentStatus, remainingAmount) => {
+    if (paymentStatus === 'paid' || remainingAmount <= 0) {
+      return 'Fully Paid';
+    } else if (paymentStatus === 'partially_paid') {
+      return 'Partially Paid';
+    }
+    return 'Pending';
   };
 
   const getStatusColor = (status) => {
@@ -148,6 +257,9 @@ const InvoiceList = () => {
                   Invoice Number
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  GRN Number
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Supplier
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -160,7 +272,7 @@ const InvoiceList = () => {
                   Payment Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Due Date
+                  Invoice Date
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -173,28 +285,31 @@ const InvoiceList = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-purple-600">{invoice.invoiceNumber}</div>
                     <div className="text-sm text-gray-500">
-                      {new Date(invoice.createdAt).toLocaleDateString()}
+                      {invoice.poNumber && <span>PO: {invoice.poNumber}</span>}
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{invoice.grnNumber || 'N/A'}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">{getSupplierName(invoice.supplierId)}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">${(invoice.total || 0).toFixed(2)}</div>
+                    <div className="text-sm font-medium text-gray-900">LKR {(invoice.total || 0).toFixed(2)}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">${(invoice.totalPaid || 0).toFixed(2)}</div>
+                    <div className="text-sm text-gray-900">LKR {(invoice.totalPaid || 0).toFixed(2)}</div>
                     <div className="text-sm text-gray-500">
-                      Remaining: ${(invoice.remainingAmount || invoice.total || 0).toFixed(2)}
+                      Remaining: LKR {(invoice.remainingAmount || invoice.total || 0).toFixed(2)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.paymentStatus)}`}>
-                      {invoice.paymentStatus?.replace('_', ' ').toUpperCase() || 'PENDING'}
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPaymentStatusColor(invoice.paymentStatus, invoice.remainingAmount)}`}>
+                      {getPaymentStatusLabel(invoice.paymentStatus, invoice.remainingAmount)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}
+                    {new Date(invoice.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end space-x-2">
@@ -204,6 +319,13 @@ const InvoiceList = () => {
                         title="View Details"
                       >
                         <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => generatePrintableInvoice(invoice)}
+                        className="text-blue-600 hover:text-blue-900 p-1 rounded"
+                        title="Print Invoice"
+                      >
+                        <Download className="h-4 w-4" />
                       </button>
                       {invoice.paymentStatus !== 'paid' && (
                         <button
@@ -227,7 +349,7 @@ const InvoiceList = () => {
             <Receipt className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">No invoices found</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {searchTerm || filterStatus || filterSupplier ? 'Try adjusting your search criteria.' : 'Get started by creating a new invoice.'}
+              {searchTerm || filterStatus || filterSupplier ? 'Try adjusting your search criteria.' : 'Invoices will be automatically created from approved GRNs.'}
             </p>
           </div>
         )}

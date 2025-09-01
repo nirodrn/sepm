@@ -4,6 +4,7 @@ import { TruckIcon, Plus, Search, Filter, Edit, Trash2, Eye, Star } from 'lucide
 import { supplierService } from '../../../services/supplierService';
 import LoadingSpinner from '../../../components/Common/LoadingSpinner';
 import ErrorMessage from '../../../components/Common/ErrorMessage';
+import SupplierGradeDisplay from '../../../components/Common/SupplierGradeDisplay';
 
 const SupplierList = () => {
   const navigate = useNavigate();
@@ -184,10 +185,13 @@ const SupplierList = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-1">
-                      {getRatingStars(supplier.rating || 0)}
-                      <span className="text-sm text-gray-600 ml-2">({supplier.rating || 0})</span>
-                    </div>
+                    <SupplierGradeDisplay
+                      grade={supplier.currentGrade}
+                      averagePoints={supplier.averageGradePoints}
+                      totalDeliveries={supplier.totalDeliveries}
+                      lastDeliveryGrade={supplier.lastDeliveryGrade}
+                      size="sm"
+                    />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {supplier.totalOrders || 0}

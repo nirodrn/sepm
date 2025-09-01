@@ -117,12 +117,27 @@ export const invoiceService = {
 
   async updatePaymentStatus(invoiceId, paymentData) {
     try {
+      const invoice = await getData(`invoices/${invoiceId}`);
+      if (!invoice) throw new Error('Invoice not found');
+      
+      const newTotalPaid = (invoice.totalPaid || 0) + (paymentData.amount || 0);
+      const newRemainingAmount = (invoice.total || 0) - newTotalPaid;
+      
+      let newPaymentStatus = 'pending';
+      if (newRemainingAmount <= 0) {
+        newPaymentStatus = 'paid';
+      } else if (newTotalPaid > 0) {
+        newPaymentStatus = 'partially_paid';
+      }
+      
       const updates = {
-        paymentStatus: paymentData.status,
+        paymentStatus: newPaymentStatus,
         paymentMethod: paymentData.method,
         paymentDate: paymentData.date,
         paymentAmount: paymentData.amount,
         paymentNotes: paymentData.notes || '',
+        totalPaid: newTotalPaid,
+        remainingAmount: Math.max(0, newRemainingAmount),
         updatedAt: Date.now(),
         updatedBy: auth.currentUser?.uid
       };

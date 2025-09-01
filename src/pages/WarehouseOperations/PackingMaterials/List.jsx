@@ -100,7 +100,18 @@ const PackingMaterialsList = () => {
               <Archive className="h-8 w-8 mr-3 text-green-600" />
               Packing Materials
             </h1>
-            <p className="text-gray-600 mt-2">Manage packing material inventory and stock levels</p>
+            <p className="text-gray-600 mt-2">
+              Manage packing material inventory and stock levels
+              {packingMaterials.length > 0 && (
+                <span className="ml-2 text-green-600 font-medium">
+                  • Total Value: ${packingMaterials.reduce((sum, material) => {
+                    const stock = material.currentStock || 0;
+                    const price = material.pricePerUnit || 0;
+                    return sum + (stock * price);
+                  }, 0).toLocaleString()}
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={() => navigate('/warehouse/packing-materials/request')}

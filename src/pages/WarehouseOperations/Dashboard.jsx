@@ -3,6 +3,7 @@ import { Package, AlertTriangle, CheckCircle, Clock, FileText, Receipt, TruckIco
 import { useNavigate } from 'react-router-dom';
 import { subscribeToData } from '../../firebase/db';
 import { requestService } from '../../services/requestService';
+import { materialService } from '../../services/materialService';
 import { auth } from '../../firebase/auth';
 import { formatDate } from '../../utils/formatDate';
 import LoadingSpinner from '../../components/Common/LoadingSpinner';
@@ -40,6 +41,24 @@ const WarehouseOperationsDashboard = () => {
         requestedBy: currentUser.uid 
       });
 
+      // Calculate material totals
+      const [rawMaterials, packingMaterials] = await Promise.all([
+        materialService.getRawMaterials(),
+        materialService.getPackingMaterials()
+      ]);
+
+      const totalRawMaterialsValue = rawMaterials.reduce((sum, material) => {
+        const stock = material.currentStock || 0;
+        const price = material.pricePerUnit || 0;
+        return sum + (stock * price);
+      }, 0);
+
+      const totalPackingMaterialsValue = packingMaterials.reduce((sum, material) => {
+        const stock = material.currentStock || 0;
+        const price = material.pricePerUnit || 0;
+        return sum + (stock * price);
+      }, 0);
+
       // Calculate stats
       const pendingRequests = userRequests.filter(req => req.status === 'pending_ho').length;
       const approvedRequests = userRequests.filter(req => 
@@ -67,20 +86,20 @@ const WarehouseOperationsDashboard = () => {
           color: 'green'
         },
         {
-          name: 'Rejected Requests',
-          value: rejectedRequests.toString(),
-          change: 'Need revision',
-          changeType: rejectedRequests > 0 ? 'negative' : 'neutral',
-          icon: AlertTriangle,
-          color: 'red'
+          name: 'Raw Materials Value',
+          value: `$${totalRawMaterialsValue.toLocaleString()}`,
+          change: 'Total inventory value',
+          changeType: 'neutral',
+          icon: Package,
+          color: 'blue'
         },
         {
-          name: 'Total Requests',
-          value: userRequests.length.toString(),
-          change: 'All time',
+          name: 'Packing Materials Value',
+          value: `$${totalPackingMaterialsValue.toLocaleString()}`,
+          change: 'Total inventory value',
           changeType: 'neutral',
-          icon: FileText,
-          color: 'blue'
+          icon: Archive,
+          color: 'purple'
         }
       ]);
 

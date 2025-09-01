@@ -161,6 +161,12 @@ const Sidebar = () => {
           roles: ['WarehouseStaff']
         },
         {
+          title: 'GRN Quality Control',
+          icon: ClipboardCheck,
+          path: '/warehouse/qc/grn-list',
+          roles: ['WarehouseStaff']
+        },
+        {
           title: 'Request History',
           icon: Clock,
           path: '/approvals/history',

@@ -111,13 +111,6 @@ const PurchaseOrderList = () => {
             </h1>
             <p className="text-gray-600 mt-2">Manage purchase orders and supplier transactions</p>
           </div>
-          <button
-            onClick={() => navigate('/warehouse/purchase-orders/create')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Create PO</span>
-          </button>
         </div>
       </div>
 

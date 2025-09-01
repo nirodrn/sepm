@@ -19,6 +19,11 @@ export const grnService = {
       if (grnData.poId) {
         await this.updatePOReceiptStatus(grnData.poId);
       }
+
+      // Record QC results if provided
+      if (grnData.qcResults) {
+        await this.recordQCResults(id, grnData.qcResults);
+      }
       
       return { id, ...grn };
     } catch (error) {
@@ -26,6 +31,22 @@ export const grnService = {
     }
   },
 
+  async recordQCResults(grnId, qcResults) {
+    try {
+      const qcRecord = {
+        grnId,
+        qcResults,
+        qcDate: Date.now(),
+        qcOfficer: auth.currentUser?.uid,
+        createdAt: Date.now()
+      };
+      
+      await pushData('qcRecords', qcRecord);
+      return qcRecord;
+    } catch (error) {
+      throw new Error(`Failed to record QC results: ${error.message}`);
+    }
+  },
   async getGRNs(filters = {}) {
     try {
       const grns = await getData('goodsReceipts');
@@ -54,7 +75,7 @@ export const grnService = {
     try {
       const updates = {
         status,
-        qcData,
+        ...qcData,
         updatedAt: Date.now(),
         updatedBy: auth.currentUser?.uid
       };

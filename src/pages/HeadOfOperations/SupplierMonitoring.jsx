@@ -3,6 +3,7 @@ import { supplierService } from '../../services/supplierService';
 import LoadingSpinner from '../../components/Common/LoadingSpinner';
 import ErrorMessage from '../../components/Common/ErrorMessage';
 import { TrendingUp, TrendingDown, Package, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
+import SupplierGradeDisplay from '../../components/Common/SupplierGradeDisplay';
 
 const SupplierMonitoring = () => {
   const [suppliers, setSuppliers] = useState([]);
@@ -123,20 +124,13 @@ const SupplierMonitoring = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              {performance ? (
-                                <div className="flex items-center">
-                                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPerformanceColor(performance.overallScore)}`}>
-                                    {performance.overallScore}%
-                                  </span>
-                                  {performance.trend === 'up' ? (
-                                    <TrendingUp className="ml-2 h-4 w-4 text-green-500" />
-                                  ) : (
-                                    <TrendingDown className="ml-2 h-4 w-4 text-red-500" />
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-sm text-gray-500">No data</span>
-                              )}
+                              <SupplierGradeDisplay
+                                grade={supplier.currentGrade}
+                                averagePoints={supplier.averageGradePoints}
+                                totalDeliveries={supplier.totalDeliveries}
+                                lastDeliveryGrade={supplier.lastDeliveryGrade}
+                                size="sm"
+                              />
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {supplier.lastOrderDate ? 

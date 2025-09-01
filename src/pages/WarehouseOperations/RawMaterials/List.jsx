@@ -98,7 +98,18 @@ const RawMaterialsList = () => {
               <Package className="h-8 w-8 mr-3 text-blue-600" />
               Raw Materials
             </h1>
-            <p className="text-gray-600 mt-2">Manage raw material inventory and stock levels</p>
+            <p className="text-gray-600 mt-2">
+              Manage raw material inventory and stock levels
+              {rawMaterials.length > 0 && (
+                <span className="ml-2 text-blue-600 font-medium">
+                  • Total Value: ${rawMaterials.reduce((sum, material) => {
+                    const stock = material.currentStock || 0;
+                    const price = material.pricePerUnit || 0;
+                    return sum + (stock * price);
+                  }, 0).toLocaleString()}
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={() => navigate('/warehouse/raw-materials/request')}
